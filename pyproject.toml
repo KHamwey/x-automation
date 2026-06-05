@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "x-automation"
+version = "0.1.0"
+description = "Programmatic tools for managing your X account"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "xdk>=0.9.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+x-automation = "x_automation.cli:main"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
