@@ -150,6 +150,10 @@ activemq-data/
 # Project data (tokens, checkpoints, inventories)
 data/
 
+# Local feed / prompt config (copy from *.example)
+feeds.yaml
+prompts.yaml
+
 # Environments
 .env
 .envrc
