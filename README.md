@@ -22,10 +22,16 @@ Programmatic tools for managing your X account — starting with safe bulk delet
 
 ```bash
 cd x-automation
-python3 -m pip install .
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install .
+
 cp .env.example .env
-# Edit .env with CLIENT_ID, CLIENT_SECRET, REDIRECT_URI from Developer Console
+# Edit .env with real CLIENT_ID and CLIENT_SECRET from Developer Console
 ```
+
+Run commands from the `x-automation` directory so `.env` and `data/` resolve correctly.
 
 In the Developer Console, set your OAuth 2.0 redirect URI to match `.env` (e.g. `http://127.0.0.1:8080/callback`).
 

@@ -25,7 +25,29 @@ from xdk import Client
 #   offline.access — refresh token for multi-hour delete runs
 SCOPES = ["tweet.read", "tweet.write", "users.read", "offline.access"]
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+def _find_project_root() -> Path:
+    """Resolve project root when installed in site-packages (pip install .).
+
+    ``Path(__file__).parents[2]`` points at ``.venv/lib/...`` after install,
+    so prefer the working directory (where you run the CLI) and walk up for
+    ``.env`` or ``pyproject.toml``.
+    """
+    markers = (".env", "pyproject.toml")
+    cwd = Path.cwd()
+    for candidate in (cwd, *cwd.parents):
+        if any((candidate / name).exists() for name in markers):
+            return candidate
+
+    here = Path(__file__).resolve().parent
+    for candidate in (*here.parents, here):
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+
+    return cwd
+
+
+PROJECT_ROOT = _find_project_root()
 DATA_DIR = PROJECT_ROOT / "data"
 TOKEN_PATH = DATA_DIR / "token.json"
 CHECKPOINT_PATH = DATA_DIR / "checkpoint.json"
@@ -45,7 +67,10 @@ def ensure_data_dir() -> None:
 
 
 def load_env() -> None:
-    load_dotenv(PROJECT_ROOT / ".env")
+    root = _find_project_root()
+    load_dotenv(root / ".env")
+    # Fallback: dotenv also checks cwd when invoked without a path.
+    load_dotenv()
 
 
 def get_env(name: str, default: str | None = None) -> str | None:
