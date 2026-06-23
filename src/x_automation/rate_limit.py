@@ -29,6 +29,8 @@ BUCKET_CONFIG = {
     "delete": {"limit": 45, "window_sec": 900, "min_interval": 20.0},
     # GET /2/users/me — called once per run.
     "users_me": {"limit": 70, "window_sec": 900, "min_interval": 0.5},
+    # POST /2/tweets — 100/15min documented; light pacing for publish runs.
+    "post": {"limit": 90, "window_sec": 900, "min_interval": 1.0},
 }
 
 
