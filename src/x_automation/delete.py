@@ -1,4 +1,18 @@
-"""Delete posts with dry-run support, checkpoints, and cost estimates."""
+"""Delete posts with dry-run support, checkpoints, and cost estimates.
+
+Orchestrates the full delete workflow:
+
+1. Resolve authenticated user (GET /2/users/me)
+2. Paginate timeline (GET /2/users/:id/tweets) — billed as owned reads
+3. Save inventory JSON for manual review (always, even in dry-run)
+4. Preview posts in the terminal
+5. On ``--execute``: typed confirmation, then DELETE /2/tweets/:id per post
+
+Checkpoints (``data/checkpoint.json``) record successfully deleted IDs so
+``--resume`` can skip them after an interruption. Large histories are limited
+to ~45 deletes per 15 minutes by :mod:`x_automation.rate_limit`, so a 5k-post
+cleanup can take many hours.
+"""
 
 from __future__ import annotations
 
@@ -34,6 +48,7 @@ class DeleteResult:
     inventory_path: str | None = None
 
     def estimated_cost(self) -> tuple[float, float]:
+        """Return (low, high) USD estimate from fetched + deleted counts."""
         read_cost = self.fetched * OWNED_READ_COST
         delete_cost_low = self.deleted * DELETE_COST_LOW
         delete_cost_high = self.deleted * DELETE_COST_HIGH
@@ -48,6 +63,11 @@ def load_checkpoint() -> dict:
 
 
 def save_checkpoint(deleted_ids: list[str], user_id: str, total: int) -> None:
+    """Persist progress after each successful delete.
+
+    Written incrementally (not batched) so Ctrl-C loses at most one in-flight
+    delete, not the entire run.
+    """
     ensure_data_dir()
     payload = {
         "user_id": user_id,
@@ -64,6 +84,12 @@ def clear_checkpoint() -> None:
 
 
 def confirm_execution(count: int, *, delete_all: bool) -> bool:
+    """Require exact typed confirmation before irreversible deletes.
+
+    ``delete-all`` expects ``DELETE ALL``; filtered deletes expect
+    ``DELETE <count>`` matching the remaining post count so the user
+    cannot confirm without reading how many posts will be removed.
+    """
     if delete_all:
         prompt = "Type DELETE ALL to confirm permanent deletion: "
         expected = "DELETE ALL"
@@ -76,9 +102,11 @@ def confirm_execution(count: int, *, delete_all: bool) -> bool:
 
 
 def delete_post(client: Client, post_id: str, rate_limiter: RateLimiter) -> None:
+    """DELETE /2/tweets/:id for a single post (billed per delete)."""
     apply_auth_headers(client)
     url = f"{client.base_url}/2/tweets/{post_id}"
     response = rate_limiter.request(client.session, "DELETE", url, bucket="delete")
+    # 404 = already gone (e.g. manual delete or prior partial run) — treat as success.
     if response.status_code == 404:
         return
     response.raise_for_status()
@@ -117,6 +145,7 @@ def run_delete(
     if result.fetched == 0:
         return result
 
+    # Always write inventory before any deletes — review this file in dry-run.
     result.inventory_path = save_inventory(posts, user)
     print(f"Inventory saved to {result.inventory_path}")
 
@@ -134,6 +163,7 @@ def run_delete(
 
     low, high = result.estimated_cost()
     if execute:
+        # Include projected delete cost for posts not yet removed.
         est_low = low + remaining * DELETE_COST_LOW
         est_high = high + remaining * DELETE_COST_HIGH
     else:

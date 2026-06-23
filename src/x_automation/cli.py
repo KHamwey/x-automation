@@ -1,4 +1,17 @@
-"""Command-line interface for x-automation."""
+"""Command-line interface for x-automation.
+
+Subcommands:
+
+- ``auth`` — one-time OAuth2 PKCE setup (no API credits consumed beyond a
+  single GET /2/users/me verification call).
+- ``delete-all`` — fetch and optionally delete every post the authenticated
+  user authored (original tweets, replies, and quote/repost records).
+- ``delete`` — same flow, but only posts whose text contains a given emoji tag.
+
+Safety defaults: delete commands are **dry-run** unless ``--execute`` is passed.
+Even with ``--execute``, the delete module prompts for a typed confirmation
+before any DELETE /2/tweets/:id calls are made.
+"""
 
 from __future__ import annotations
 
@@ -50,6 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_delete_flags(parser: argparse.ArgumentParser) -> None:
+    # --execute is opt-in: default dry-run only performs owned reads (GET
+    # /2/users/:id/tweets), which still costs credits but cannot delete anything.
     parser.add_argument(
         "--execute",
         action="store_true",
@@ -60,6 +75,8 @@ def _add_delete_flags(parser: argparse.ArgumentParser) -> None:
         default=None,
         help=f"API base URL (default: {DEFAULT_API_BASE_URL} or API_BASE_URL env)",
     )
+    # --resume skips post IDs already recorded in data/checkpoint.json so a
+    # long delete run can continue after Ctrl-C or rate-limit exhaustion.
     parser.add_argument(
         "--resume",
         action="store_true",

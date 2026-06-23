@@ -1,4 +1,16 @@
-"""Rate limit tracking, 429 backoff, and request pacing."""
+"""Rate limit tracking, 429 backoff, and request pacing.
+
+X API v2 enforces per-user rate limits over rolling 15-minute windows.
+Exceeding them returns HTTP 429; this module tracks ``x-rate-limit-*``
+response headers and adds conservative pacing so long delete runs complete
+without hammering the API.
+
+Delete pacing is the bottleneck: the documented limit is 50 DELETEs per 15 min,
+but we target 45 with ~20s between requests to stay safely under the cap and
+avoid 429 sleeps that would stall the run even longer.
+
+See: https://docs.x.com/x-api/fundamentals/rate-limits
+"""
 
 from __future__ import annotations
 
@@ -9,10 +21,13 @@ from typing import Any
 
 import requests
 
-# Per-user limits from https://docs.x.com/x-api/fundamentals/rate-limits
+# Per-user limits (documented ceiling) with safety margins baked into min_interval.
 BUCKET_CONFIG = {
+    # GET /2/users/:id/tweets — 900/15min documented; light pacing only.
     "timeline": {"limit": 850, "window_sec": 900, "min_interval": 0.1},
+    # DELETE /2/tweets/:id — 50/15min documented; ~20s spacing ≈ 45/15min.
     "delete": {"limit": 45, "window_sec": 900, "min_interval": 20.0},
+    # GET /2/users/me — called once per run.
     "users_me": {"limit": 70, "window_sec": 900, "min_interval": 0.5},
 }
 
@@ -36,6 +51,7 @@ class RateLimiter:
         }
 
     def update_from_response(self, response: requests.Response, bucket: str) -> None:
+        """Sync local state from X's x-rate-limit-* headers after each request."""
         headers = response.headers
         if "x-rate-limit-remaining" not in headers:
             return
@@ -51,12 +67,15 @@ class RateLimiter:
         state = self.buckets.setdefault(bucket, BucketState(limit=cfg["limit"]))
         now = time.time()
 
+        # Enforce minimum spacing between requests (critical for delete bucket).
         min_interval = cfg.get("min_interval", 1.0)
         if state.last_request_at:
             elapsed = now - state.last_request_at
             if elapsed < min_interval:
                 time.sleep(min_interval - elapsed)
 
+        # Sliding-window cap: if we've hit the configured limit, wait for the
+        # oldest request to fall outside the 15-minute window.
         window_sec = cfg["window_sec"]
         state.request_times = [t for t in state.request_times if now - t < window_sec]
         if len(state.request_times) >= cfg["limit"]:
@@ -66,6 +85,7 @@ class RateLimiter:
                 print(f"  [rate-limit] Pacing {bucket}: sleeping {sleep_for:.0f}s")
                 time.sleep(sleep_for)
 
+        # Proactive backoff when headers show the bucket is nearly exhausted.
         if state.remaining is not None and state.remaining <= 1 and state.reset_at > now:
             sleep_for = state.reset_at - now + random.uniform(1.0, 3.0)
             print(f"  [rate-limit] Bucket {bucket} nearly exhausted; sleeping {sleep_for:.0f}s")
@@ -86,6 +106,7 @@ class RateLimiter:
             wait = max(float(reset) - time.time(), 60.0)
         else:
             wait = 60.0
+        # Jitter avoids thundering herd if multiple clients share the same app.
         wait += random.uniform(1.0, 5.0)
         print(f"  [rate-limit] 429 received; sleeping {wait:.0f}s until reset")
         time.sleep(wait)

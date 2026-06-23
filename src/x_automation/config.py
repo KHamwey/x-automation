@@ -1,4 +1,13 @@
-"""Configuration, paths, and client factory."""
+"""Configuration, paths, and client factory.
+
+Loads credentials from ``.env`` (via python-dotenv) and persisted OAuth
+tokens from ``data/token.json``. All runtime artifacts (token, checkpoints,
+inventories) live under ``data/`` which is gitignored.
+
+Cost constants below are rough USD estimates for console output only — confirm
+current pay-per-use rates in the X Developer Console before running against
+production.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +18,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 from xdk import Client
 
+# Scopes required for the full delete workflow:
+#   tweet.read  — GET /2/users/:id/tweets (owned reads, billed per post returned)
+#   tweet.write — DELETE /2/tweets/:id
+#   users.read  — GET /2/users/me (resolve authenticated user ID)
+#   offline.access — refresh token for multi-hour delete runs
 SCOPES = ["tweet.read", "tweet.write", "users.read", "offline.access"]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -19,7 +33,8 @@ TAGS_PATH = DATA_DIR / "tags.json"
 
 DEFAULT_API_BASE_URL = "https://api.x.com"
 
-# Cost estimates per resource (USD) for summary output
+# Rough pay-per-use estimates (USD) shown in delete summaries.
+# Owned reads (listing your tweets) and deletes are billed separately.
 OWNED_READ_COST = 0.001
 DELETE_COST_LOW = 0.005
 DELETE_COST_HIGH = 0.010
@@ -49,10 +64,19 @@ def save_token(token: dict) -> None:
     ensure_data_dir()
     with TOKEN_PATH.open("w", encoding="utf-8") as f:
         json.dump(token, f, indent=2)
+    # Restrict permissions — token file contains refresh token secrets.
     TOKEN_PATH.chmod(0o600)
 
 
 def create_client(base_url: str | None = None) -> Client:
+    """Build an xdk Client from .env + saved OAuth token (or bearer fallback).
+
+    Production: OAuth token from ``auth`` command (user-context, required for
+    deleting your own tweets).
+
+    Playground: set ``BEARER_TOKEN=test`` and ``--api-base-url http://localhost:8080``
+    to exercise the CLI without spending credits or touching a real account.
+    """
     load_env()
     token = load_token()
     client_id = get_env("CLIENT_ID")
@@ -84,7 +108,11 @@ def create_client(base_url: str | None = None) -> Client:
 
 
 def apply_auth_headers(client: Client) -> None:
-    """Ensure the session has a valid Authorization header."""
+    """Ensure the session has a valid Authorization header.
+
+    Proactively refreshes expired OAuth tokens and persists the new token
+    so a multi-hour delete run does not fail mid-batch.
+    """
     if client.access_token:
         if client.oauth2_auth and client.token and client.is_token_expired():
             client.refresh_token()

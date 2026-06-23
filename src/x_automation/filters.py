@@ -1,4 +1,14 @@
-"""Post filtering helpers (emoji tags, tag aliases)."""
+"""Post filtering helpers (emoji tags, tag aliases).
+
+Emoji-based tagging is a client-side convention: prepend a distinctive emoji
+(e.g. 🟦) to posts you may want to bulk-delete later. The X API has no native
+tag field, so filtering happens after fetch by substring match on ``text``.
+
+Because filtering is client-side, **all pages are still fetched** (and billed
+as owned reads) even when ``--emoji`` is set — only the delete target list is
+narrowed. For large accounts, tag posts consistently to avoid paying to scan
+unrelated history.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +20,12 @@ from x_automation.config import TAGS_PATH
 
 
 def normalize_text(text: str) -> str:
-    """Normalize Unicode for consistent emoji matching."""
+    """Normalize Unicode for consistent emoji matching.
+
+    Emojis can be represented multiple ways in Unicode (e.g. composed vs
+    decomposed sequences). NFC normalization prevents false negatives when
+    matching ``--emoji`` against tweet text.
+    """
     return unicodedata.normalize("NFC", text)
 
 
@@ -42,6 +57,7 @@ def resolve_emoji_filter(emoji: str | None, tag: str | None, tags_path: Path | N
 
 
 def post_matches_emoji(post: dict, emoji: str) -> bool:
+    """True if the emoji appears anywhere in the post text (substring match)."""
     text = post.get("text") or ""
     return normalize_text(emoji) in normalize_text(text)
 

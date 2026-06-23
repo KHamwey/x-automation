@@ -1,4 +1,13 @@
-"""Fetch and export posts from the authenticated user's timeline."""
+"""Fetch and export posts from the authenticated user's timeline.
+
+Uses GET /2/users/:id/tweets to list tweets the authenticated user authored
+(original posts, replies, quotes, and retweets-with-comment). Each tweet
+returned counts as an **owned read** toward pay-per-use billing.
+
+Pagination returns up to 100 tweets per page (``max_results``). The full
+timeline must be walked to build a complete inventory — there is no server-side
+emoji filter on this endpoint.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +22,8 @@ from x_automation.filters import filter_posts
 from x_automation.rate_limit import RateLimiter
 
 
+# Fields requested per tweet; keep minimal to reduce payload size.
+# referenced_tweets identifies replies/quotes/retweets if needed for review.
 TWEET_FIELDS = ["id", "text", "created_at", "referenced_tweets", "author_id"]
 
 
@@ -25,6 +36,7 @@ def _response_to_dict(response) -> dict:
 
 
 def get_authenticated_user(client: Client, rate_limiter: RateLimiter) -> dict:
+    """GET /2/users/me — resolve the OAuth token holder's user ID and username."""
     apply_auth_headers(client)
     url = f"{client.base_url}/2/users/me"
     response = rate_limiter.request(client.session, "GET", url, bucket="users_me")
@@ -63,6 +75,8 @@ def fetch_user_posts(
         body = response.json()
         page_posts = body.get("data") or []
 
+        # Emoji filter applied per page — API still returns (and bills for)
+        # every tweet; we only keep matches in the local inventory.
         if emoji_filter:
             page_posts = filter_posts(page_posts, emoji_filter)
 
@@ -79,7 +93,11 @@ def fetch_user_posts(
 
 
 def save_inventory(posts: list[dict], user: dict) -> str:
-    """Write fetched posts to data/inventory-{timestamp}.json; return path."""
+    """Write fetched posts to data/inventory-{timestamp}.json; return path.
+
+    This snapshot is the authoritative pre-delete record — review it during
+    dry-run before passing ``--execute``. Deletions are irreversible.
+    """
     from x_automation.config import DATA_DIR
 
     ensure_data_dir()
@@ -97,6 +115,7 @@ def save_inventory(posts: list[dict], user: dict) -> str:
 
 
 def preview_posts(posts: list[dict], limit: int = 20) -> None:
+    """Print a terminal table of the first N posts for quick visual review."""
     print(f"\n{'ID':<22} {'Created':<22} Text preview")
     print("-" * 80)
     for post in posts[:limit]:

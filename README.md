@@ -2,6 +2,15 @@
 
 Programmatic tools for managing your X account — starting with safe bulk deletion of posts and replies.
 
+<!--
+  Architecture: CLI (cli.py) → delete orchestration (delete.py) → timeline fetch
+  (timeline.py) + rate limiting (rate_limit.py). Auth is OAuth2 PKCE (auth.py);
+  config (config.py) loads .env and data/token.json. Emoji/tag filtering
+  (filters.py) is client-side substring match after fetch. Default is dry-run;
+  --execute requires typed confirmation. See module docstrings in src/x_automation/
+  for API endpoints, billing, and safety behavior before spending credits.
+-->
+
 ## Prerequisites
 
 - Python 3.9+
