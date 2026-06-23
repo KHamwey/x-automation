@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CursorDraftInbox",
+  "type": "object",
+  "required": ["category", "text"],
+  "properties": {
+    "category": {
+      "type": "string",
+      "description": "Category name matching feeds.yaml (e.g. news, manufacturing, comedy)"
+    },
+    "text": {
+      "type": "string",
+      "description": "Draft post body. Emoji tag will be prepended if tag_emoji is set."
+    },
+    "tag_emoji": {
+      "type": "string",
+      "description": "Optional emoji prefix (e.g. 👽). Resolved from data/tags.json if omitted."
+    },
+    "source_url": {
+      "type": "string",
+      "description": "Optional URL. Including https:// in final text increases X API post cost."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional agent metadata (agent name, prompt version, etc.)"
+    }
+  },
+  "additionalProperties": false
+}

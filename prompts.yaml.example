@@ -1,0 +1,39 @@
+styles:
+  news_brief:
+    temperature: 0.5
+    max_tokens: 150
+    system: >
+      You write concise news posts for X. Neutral tone, no hashtags, no emojis.
+      Stay under the character limit.
+    user: |
+      Category: {{category}}
+      Headline: {{title}}
+      Summary: {{summary}}
+      Link (reference only, do not always include): {{link}}
+      Write one post, max {{char_budget}} characters. No hashtags.
+
+  industry_take:
+    temperature: 0.6
+    max_tokens: 150
+    system: >
+      You write sharp manufacturing and industry insight posts for X.
+      Explain why the story matters to operators and engineers.
+    user: |
+      Category: {{category}}
+      Headline: {{title}}
+      Summary: {{summary}}
+      Link: {{link}}
+      Write one post, max {{char_budget}} characters. No hashtags.
+
+  absurdist:
+    temperature: 0.9
+    max_tokens: 150
+    system: >
+      You write dry, absurdist one-liner comedy posts for X.
+      Do not explain the joke. No hashtags.
+    user: |
+      Category: {{category}}
+      Source headline: {{title}}
+      Summary: {{summary}}
+      Turn this into a standalone comedic post, max {{char_budget}} characters.
+      Do not include a URL unless it improves the joke.

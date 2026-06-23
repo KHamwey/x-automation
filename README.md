@@ -82,6 +82,64 @@ python -m x_automation.cli delete --tag portfolio --execute
 | `--api-base-url URL` | Override API host (see Playground below) |
 | `--resume` | Continue from `data/checkpoint.json` |
 
+## Draft pipeline (approve-first posting)
+
+RSS feeds and Cursor agents create **drafts** locally. Nothing posts to X until you approve and publish.
+
+### Setup
+
+```bash
+cp feeds.yaml.example feeds.yaml      # edit RSS URLs and categories
+cp prompts.yaml.example prompts.yaml  # Grok prompt templates
+cp tags.json.example data/tags.json
+
+# Add to .env:
+# XAI_API_KEY=...   (for Grok transforms in drafts fetch)
+# DRAFTS_DAILY_CAP=3
+```
+
+### Workflow
+
+```bash
+# 1. Fetch RSS → Grok → pending drafts (xAI cost only, no X post cost)
+python -m x_automation.cli drafts fetch
+
+# 2. Or import Cursor agent JSON from data/inbox/cursor/
+python -m x_automation.cli drafts import-inbox
+
+# 3. Review and approve
+python -m x_automation.cli drafts list --status pending
+python -m x_automation.cli drafts show <draft-id>
+python -m x_automation.cli drafts approve <draft-id>
+
+# 4. Publish (dry-run first)
+python -m x_automation.cli drafts publish
+python -m x_automation.cli drafts publish --execute
+
+# 5. Check daily caps (3 per category per UTC day)
+python -m x_automation.cli drafts stats
+```
+
+See [docs/CURSOR_AGENTS.md](docs/CURSOR_AGENTS.md) for Cursor inbox format.
+
+### Posting costs
+
+| Post type | Rough X API cost |
+|-----------|------------------|
+| Text-only | ~$0.015 |
+| Contains URL | ~$0.20 |
+
+Drafts show estimated cost before publish. Grok/xAI usage is billed separately via xAI.
+
+### Cron example
+
+```bash
+# Fetch new drafts every 2 hours (no X API cost)
+0 */2 * * * cd ~/Projects/x-automation && .venv/bin/python -m x_automation.cli drafts fetch
+```
+
+Review and publish manually after approving drafts.
+
 ## Local testing with X API Playground (free)
 
 The [X API Playground](https://github.com/xdevplatform/playground) simulates API v2 locally — no credits consumed, but **does not touch your real account**.
@@ -139,7 +197,13 @@ src/x_automation/
   cli.py         # CLI entry point
   config.py      # env, paths, client factory
   delete.py      # delete loop + checkpoints
+  drafts.py      # local draft queue
   filters.py     # emoji/tag filtering
+  grok.py        # xAI Grok transforms
+  inbox.py       # Cursor agent JSON import
+  ingest.py      # RSS + Grok ingest orchestration
+  publish.py     # publish approved drafts + daily caps
   rate_limit.py  # 429 handling + pacing
+  rss.py         # RSS feed polling
   timeline.py    # fetch user posts + inventory export
 ```

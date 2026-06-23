@@ -52,14 +52,26 @@ DATA_DIR = PROJECT_ROOT / "data"
 TOKEN_PATH = DATA_DIR / "token.json"
 CHECKPOINT_PATH = DATA_DIR / "checkpoint.json"
 TAGS_PATH = DATA_DIR / "tags.json"
+DRAFTS_PATH = DATA_DIR / "drafts.json"
+SEEN_RSS_PATH = DATA_DIR / "seen_rss.json"
+PUBLISH_LOG_PATH = DATA_DIR / "publish_log.json"
+CURSOR_INBOX_DIR = DATA_DIR / "inbox" / "cursor"
+CURSOR_INBOX_PROCESSED_DIR = CURSOR_INBOX_DIR / "processed"
+FEEDS_PATH = PROJECT_ROOT / "feeds.yaml"
+PROMPTS_PATH = PROJECT_ROOT / "prompts.yaml"
 
 DEFAULT_API_BASE_URL = "https://api.x.com"
+DEFAULT_DAILY_PUBLISH_CAP = 3
+DEFAULT_XAI_MODEL = "grok-3-mini"
+XAI_API_BASE = "https://api.x.ai/v1"
 
 # Rough pay-per-use estimates (USD) shown in delete summaries.
 # Owned reads (listing your tweets) and deletes are billed separately.
 OWNED_READ_COST = 0.001
 DELETE_COST_LOW = 0.005
 DELETE_COST_HIGH = 0.010
+POST_COST_TEXT = 0.015
+POST_COST_WITH_URL = 0.20
 
 
 def ensure_data_dir() -> None:

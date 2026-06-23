@@ -1,0 +1,25 @@
+defaults:
+  daily_publish_cap: 3
+  max_drafts_per_fetch: 5
+
+categories:
+  news:
+    tag: "🔴"
+    grok_style: news_brief
+    feeds:
+      - url: https://feeds.bbci.co.uk/news/rss.xml
+        include_url: true
+
+  manufacturing:
+    tag: "🏗"
+    grok_style: industry_take
+    feeds:
+      - url: https://www.manufacturing.net/rss/topic/2236-industry-40
+        include_url: true
+
+  comedy:
+    tag: "👽"
+    grok_style: absurdist
+    feeds:
+      - url: https://www.theonion.com/rss
+        include_url: false
