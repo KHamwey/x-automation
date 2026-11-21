@@ -22,8 +22,10 @@ class IngestResult:
     drafts_created: int = 0
     skipped_seen: int = 0
     skipped_duplicate: int = 0
+    skipped_filtered: int = 0
     errors: int = 0
     error_details: list[str] = field(default_factory=list)
+    created_ids: list[str] = field(default_factory=list)
 
 
 def load_feeds_config(path: Path | None = None) -> dict[str, Any]:
@@ -72,10 +74,17 @@ def _rss_key(feed_url: str, guid: str) -> str:
     return f"{feed_url}:{guid}"
 
 
+def is_skipped_post(text: str) -> bool:
+    """Grok replies SKIP when a headline should not become a post."""
+    cleaned = text.strip().strip("\"'`").rstrip(".").strip()
+    return cleaned.upper() == "SKIP"
+
+
 def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> IngestResult:
     config = load_feeds_config(feeds_path)
     defaults = config.get("defaults") or {}
     max_drafts = int(defaults.get("max_drafts_per_fetch", 5))
+    max_per_category = int(defaults.get("max_drafts_per_category", max_drafts))
     categories = config.get("categories") or {}
 
     seen = _load_seen()
@@ -83,12 +92,16 @@ def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> Inge
     created = 0
 
     for category_name, category_cfg in categories.items():
+        if created >= max_drafts:
+            break
         tag = category_cfg.get("tag", "")
+        hashtags = [str(tag_name) for tag_name in (category_cfg.get("hashtags") or [])]
         grok_style = category_cfg.get("grok_style", "news_brief")
         feeds = category_cfg.get("feeds") or []
+        created_in_category = 0
 
         for feed_entry in feeds:
-            if created >= max_drafts:
+            if created >= max_drafts or created_in_category >= max_per_category:
                 break
 
             feed_url = feed_entry.get("url")
@@ -98,14 +111,14 @@ def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> Inge
 
             result.feeds_checked += 1
             try:
-                items = fetch_feed_items(feed_url, max_items=max_drafts)
+                items = fetch_feed_items(feed_url, max_items=max(max_drafts, 10))
             except Exception as exc:
                 result.errors += 1
                 result.error_details.append(f"{feed_url}: {exc}")
                 continue
 
             for item in items:
-                if created >= max_drafts:
+                if created >= max_drafts or created_in_category >= max_per_category:
                     break
                 result.items_seen += 1
                 key = _rss_key(item.feed_url, item.guid)
@@ -125,10 +138,15 @@ def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> Inge
                         include_url=include_url,
                         use_grok=use_grok,
                     )
-                    add_draft(
+                    if is_skipped_post(text):
+                        result.skipped_filtered += 1
+                        seen.add(key)
+                        continue
+                    draft = add_draft(
                         category=category_name,
                         text=text,
                         tag_emoji=tag,
+                        hashtags=hashtags,
                         source="rss+grok" if use_grok else "rss",
                         source_url=item.link,
                         rss_guid=item.guid,
@@ -141,7 +159,9 @@ def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> Inge
                     )
                     seen.add(key)
                     created += 1
+                    created_in_category += 1
                     result.drafts_created += 1
+                    result.created_ids.append(draft["id"])
                 except Exception as exc:
                     result.errors += 1
                     result.error_details.append(f"{key}: {exc}")
@@ -180,6 +200,7 @@ def print_ingest_summary(result: IngestResult) -> None:
     print(f"  Drafts created:    {result.drafts_created}")
     print(f"  Skipped (seen):    {result.skipped_seen}")
     print(f"  Skipped (dup):     {result.skipped_duplicate}")
+    print(f"  Skipped (filter):  {result.skipped_filtered}")
     print(f"  Errors:            {result.errors}")
     if result.error_details:
         for detail in result.error_details[:10]:

@@ -53,6 +53,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fetch_p.set_defaults(func=cmd_drafts_fetch)
 
+    auto_p = drafts_sub.add_parser(
+        "autopost",
+        help="Fetch, approve new drafts, and publish up to the daily cap",
+    )
+    auto_p.add_argument(
+        "--no-grok",
+        action="store_true",
+        help="Skip Grok; post raw RSS titles",
+    )
+    auto_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Approve new drafts but do not post to X",
+    )
+    auto_p.add_argument("--api-base-url", default=None)
+    auto_p.set_defaults(func=cmd_drafts_autopost)
+
     import_p = drafts_sub.add_parser(
         "import-inbox",
         help="Import JSON drafts from data/inbox/cursor/",
@@ -203,6 +220,30 @@ def cmd_drafts_reject(args: argparse.Namespace) -> int:
         print(f"Rejected {draft['id']}")
         return 0
     except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_drafts_autopost(args: argparse.Namespace) -> int:
+    try:
+        ingest = run_ingest(use_grok=not args.no_grok)
+        print_ingest_summary(ingest)
+        for draft_id in ingest.created_ids:
+            draft = approve_draft(draft_id)
+            print(f"Auto-approved {draft['id']} [{draft.get('category')}]")
+
+        if not list_drafts("approved"):
+            print("\nNothing to publish.")
+            return 0 if ingest.errors == 0 else 1
+
+        client = create_client(base_url=args.api_base_url)
+        result = run_publish(client, execute=not args.dry_run)
+        print_publish_summary(result, execute=not args.dry_run)
+        if args.dry_run:
+            print("\nDry run. Cron calls this command without --dry-run.")
+        failed = ingest.errors + result.errors
+        return 0 if failed == 0 else 1
+    except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 

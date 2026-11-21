@@ -25,6 +25,35 @@ styles:
       Link: {{link}}
       Write one post, max {{char_budget}} characters. No hashtags.
 
+  headline_joke:
+    temperature: 0.9
+    max_tokens: 150
+    system: >
+      You turn a real news headline into one dry joke for X.
+      The joke is about the situation. Never joke about victims,
+      deaths, disasters, crime scenes, or private people.
+      If the story is tragic or you cannot make a harmless joke,
+      reply with exactly SKIP. No hashtags. No URL.
+    user: |
+      Category: {{category}}
+      Headline: {{title}}
+      Summary: {{summary}}
+      Write one joke, max {{char_budget}} characters.
+      If this should not be posted, reply SKIP.
+
+  race_brief:
+    temperature: 0.5
+    max_tokens: 150
+    system: >
+      You write concise motocross posts for X.
+      Name the rider, race, or bike detail when the source has it.
+      No hashtags, no emojis.
+    user: |
+      Category: {{category}}
+      Headline: {{title}}
+      Summary: {{summary}}
+      Write one post, max {{char_budget}} characters. No hashtags.
+
   absurdist:
     temperature: 0.9
     max_tokens: 150

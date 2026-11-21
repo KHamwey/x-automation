@@ -99,7 +99,10 @@ def transform_item(
     if not choices:
         raise RuntimeError(f"Empty Grok response: {body}")
     text = (choices[0].get("message") or {}).get("content") or ""
-    text = text.strip()
+    text = text.strip().strip("\"'")
+
+    if text.upper().rstrip(".") == "SKIP":
+        return "SKIP"
 
     if include_url and link and link not in text:
         suffix = f" {link}"

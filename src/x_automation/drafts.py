@@ -40,6 +40,31 @@ def ensure_tag_prefix(text: str, tag_emoji: str) -> str:
     return f"{normalized_tag} {normalized_text}"
 
 
+def append_hashtags(text: str, hashtags: list[str] | None, *, limit: int = 280) -> str:
+    """Append a category's hashtags, keeping the post inside X's length limit."""
+    body = text.strip()
+    tags: list[str] = []
+    existing = {token.lower() for token in body.split()}
+    for raw in hashtags or []:
+        token = str(raw).strip()
+        if not token:
+            continue
+        if not token.startswith("#"):
+            token = f"#{token.lstrip('#')}"
+        if token.lower() in existing or token.lower() in {tag.lower() for tag in tags}:
+            continue
+        tags.append(token)
+    if not tags:
+        return body[:limit]
+    suffix = " " + " ".join(tags)
+    budget = limit - len(suffix)
+    if budget < 1:
+        return suffix.strip()[:limit]
+    if len(body) > budget:
+        body = body[: budget - 1].rstrip() + "…"
+    return f"{body}{suffix}"
+
+
 def _load_all() -> list[dict[str, Any]]:
     if not DRAFTS_PATH.exists():
         return []
@@ -81,8 +106,9 @@ def add_draft(
     feed_url: str | None = None,
     metadata: dict[str, Any] | None = None,
     status: DraftStatus = "pending",
+    hashtags: list[str] | None = None,
 ) -> dict[str, Any]:
-    final_text = ensure_tag_prefix(text, tag_emoji)
+    final_text = append_hashtags(ensure_tag_prefix(text, tag_emoji), hashtags)
     draft = {
         "id": str(uuid.uuid4()),
         "status": status,
