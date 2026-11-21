@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "x-automation"
 version = "0.1.0"
-description = "Programmatic tools for managing your X account"
+description = "Programmatic tools for managing your X account and LinkedIn autoposts"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -16,8 +16,14 @@ dependencies = [
     "httpx>=0.27.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
 [project.scripts]
 x-automation = "x_automation.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.setuptools.package-dir]
 "" = "src"

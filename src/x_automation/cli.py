@@ -12,6 +12,9 @@ from x_automation.drafts import approve_draft, get_draft, list_drafts, reject_dr
 from x_automation.filters import load_tag_map, resolve_emoji_filter
 from x_automation.ingest import print_ingest_summary, run_ingest
 from x_automation.inbox import import_inbox
+from x_automation.linkedin.auth_flow import run_linkedin_auth
+from x_automation.linkedin.autopost import print_autopost_summary, run_autopost
+from x_automation.linkedin.errors import LinkedInAuthError
 from x_automation.publish import daily_cap as get_daily_cap
 from x_automation.publish import print_publish_summary, run_publish, stats_today
 
@@ -19,7 +22,7 @@ from x_automation.publish import print_publish_summary, run_publish, stats_today
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="x-automation",
-        description="Programmatic tools for managing your X account.",
+        description="Programmatic tools for your X account and unattended LinkedIn posting.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -87,6 +90,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     stats_p = drafts_sub.add_parser("stats", help="Show today's publish counts vs daily cap")
     stats_p.set_defaults(func=cmd_drafts_stats)
+
+    linkedin_parser = subparsers.add_parser(
+        "linkedin",
+        help="LinkedIn OAuth and unattended industry posting",
+    )
+    linkedin_sub = linkedin_parser.add_subparsers(dest="linkedin_command", required=True)
+
+    linkedin_auth = linkedin_sub.add_parser(
+        "auth",
+        help="One-time local OAuth (openid profile w_member_social); saves data/linkedin_token.json",
+    )
+    linkedin_auth.set_defaults(func=cmd_linkedin_auth)
+
+    linkedin_post = linkedin_sub.add_parser(
+        "autopost",
+        help="Generate an industry post and publish it with no approval step",
+    )
+    linkedin_post.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write the post with Grok and print it; do not call LinkedIn or record history",
+    )
+    linkedin_post.add_argument(
+        "--industry",
+        default=None,
+        help="Limit this run to one industry id from linkedin_feeds.yaml (example: fedramp)",
+    )
+    linkedin_post.set_defaults(func=cmd_linkedin_autopost)
 
     return parser
 
@@ -234,6 +265,33 @@ def cmd_drafts_stats(_args: argparse.Namespace) -> int:
         for category, count in sorted(counts.items()):
             print(f"  {category}: {count}/{cap}")
     return 0
+
+
+def cmd_linkedin_auth(_args: argparse.Namespace) -> int:
+    try:
+        run_linkedin_auth()
+        return 0
+    except LinkedInAuthError as exc:
+        print(exc.banner(), file=sys.stderr)
+        return 2
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_linkedin_autopost(args: argparse.Namespace) -> int:
+    try:
+        result = run_autopost(dry_run=args.dry_run, industry=args.industry)
+        print_autopost_summary(result, dry_run=args.dry_run)
+        if result.errors:
+            return 1
+        return 0
+    except LinkedInAuthError as exc:
+        print(exc.banner(), file=sys.stderr)
+        return 2
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:
