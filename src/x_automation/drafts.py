@@ -41,28 +41,49 @@ def ensure_tag_prefix(text: str, tag_emoji: str) -> str:
 
 
 def append_hashtags(text: str, hashtags: list[str] | None, *, limit: int = 280) -> str:
-    """Append a category's hashtags, keeping the post inside X's length limit."""
+    """Append a category's hashtags, keeping the post inside X's length limit.
+
+    Always preserves the post body (truncated to ``limit`` if needed). Hashtags
+    are included in order while they fit; leftover tags are dropped rather than
+    replacing the body.
+    """
     body = text.strip()
     tags: list[str] = []
     existing = {token.lower() for token in body.split()}
+    seen: set[str] = set()
     for raw in hashtags or []:
         token = str(raw).strip()
         if not token:
             continue
         if not token.startswith("#"):
             token = f"#{token.lstrip('#')}"
-        if token.lower() in existing or token.lower() in {tag.lower() for tag in tags}:
+        key = token.lower()
+        if key in existing or key in seen:
             continue
+        seen.add(key)
         tags.append(token)
+
+    if len(body) > limit:
+        body = body[: limit - 1].rstrip() + "…"
     if not tags:
-        return body[:limit]
-    suffix = " " + " ".join(tags)
-    budget = limit - len(suffix)
-    if budget < 1:
-        return suffix.strip()[:limit]
-    if len(body) > budget:
+        return body
+
+    fitted: list[str] = []
+    for tag in tags:
+        suffix = " " + " ".join(fitted + [tag])
+        if len(body) + len(suffix) <= limit:
+            fitted.append(tag)
+            continue
+        # Make room by truncating the body, but never drop it for hashtags.
+        budget = limit - len(suffix)
+        if budget < 1:
+            break
         body = body[: budget - 1].rstrip() + "…"
-    return f"{body}{suffix}"
+        fitted.append(tag)
+
+    if not fitted:
+        return body
+    return f"{body} {' '.join(fitted)}"
 
 
 def _load_all() -> list[dict[str, Any]]:
