@@ -9,6 +9,15 @@ categories:
   news:
     tag: "🔴"
     hashtags: ["#News", "#Headlines"]
+    # Story hashtags from the draft step (1-2), plus the first static tag above.
+    # keep_static_hashtags is 0 or 1. A post keeps at most max_hashtags (2-3).
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    # @mention the main public figure or organization only after X verifies them.
+    mentions: true
+    max_mentions: 2
     grok_style: headline_joke
     # Named voice from prompts.yaml (alias: tone).
     voice: sarcastic_conservative
@@ -37,6 +46,12 @@ categories:
   comedy:
     tag: "👽"
     hashtags: ["#Comedy", "#Jokes"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
     grok_style: absurdist
     # Sarcastic. Conservative slant only when the source is politics or culture.
     voice: sarcastic_comedy
@@ -55,6 +70,12 @@ categories:
   motocross:
     tag: "🏁"
     hashtags: ["#Motocross", "#MX"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
     grok_style: race_brief
     # Sarcasm about the race. Do not pull this category into politics.
     voice: sarcastic_sports
