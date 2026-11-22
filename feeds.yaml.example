@@ -10,6 +10,8 @@ categories:
     tag: "🔴"
     hashtags: ["#News", "#Headlines"]
     grok_style: headline_joke
+    # Named voice from prompts.yaml (alias: tone).
+    voice: sarcastic_conservative
     feeds:
       - url: https://feeds.bbci.co.uk/news/rss.xml
         include_url: false
@@ -36,6 +38,8 @@ categories:
     tag: "👽"
     hashtags: ["#Comedy", "#Jokes"]
     grok_style: absurdist
+    # Sarcastic. Conservative slant only when the source is politics or culture.
+    voice: sarcastic_comedy
     feeds:
       - url: https://www.theonion.com/rss
         include_url: false
@@ -52,6 +56,8 @@ categories:
     tag: "🏁"
     hashtags: ["#Motocross", "#MX"]
     grok_style: race_brief
+    # Sarcasm about the race. Do not pull this category into politics.
+    voice: sarcastic_sports
     feeds:
       - url: https://motocrossactionmag.com/feed/
         include_url: false
