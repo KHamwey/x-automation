@@ -40,6 +40,52 @@ def ensure_tag_prefix(text: str, tag_emoji: str) -> str:
     return f"{normalized_tag} {normalized_text}"
 
 
+def append_hashtags(text: str, hashtags: list[str] | None, *, limit: int = 280) -> str:
+    """Append a category's hashtags, keeping the post inside X's length limit.
+
+    Always preserves the post body (truncated to ``limit`` if needed). Hashtags
+    are included in order while they fit; leftover tags are dropped rather than
+    replacing the body.
+    """
+    body = text.strip()
+    tags: list[str] = []
+    existing = {token.lower() for token in body.split()}
+    seen: set[str] = set()
+    for raw in hashtags or []:
+        token = str(raw).strip()
+        if not token:
+            continue
+        if not token.startswith("#"):
+            token = f"#{token.lstrip('#')}"
+        key = token.lower()
+        if key in existing or key in seen:
+            continue
+        seen.add(key)
+        tags.append(token)
+
+    if len(body) > limit:
+        body = body[: limit - 1].rstrip() + "…"
+    if not tags:
+        return body
+
+    fitted: list[str] = []
+    for tag in tags:
+        suffix = " " + " ".join(fitted + [tag])
+        if len(body) + len(suffix) <= limit:
+            fitted.append(tag)
+            continue
+        # Make room by truncating the body, but never drop it for hashtags.
+        budget = limit - len(suffix)
+        if budget < 1:
+            break
+        body = body[: budget - 1].rstrip() + "…"
+        fitted.append(tag)
+
+    if not fitted:
+        return body
+    return f"{body} {' '.join(fitted)}"
+
+
 def _load_all() -> list[dict[str, Any]]:
     if not DRAFTS_PATH.exists():
         return []
@@ -81,8 +127,9 @@ def add_draft(
     feed_url: str | None = None,
     metadata: dict[str, Any] | None = None,
     status: DraftStatus = "pending",
+    hashtags: list[str] | None = None,
 ) -> dict[str, Any]:
-    final_text = ensure_tag_prefix(text, tag_emoji)
+    final_text = append_hashtags(ensure_tag_prefix(text, tag_emoji), hashtags)
     draft = {
         "id": str(uuid.uuid4()),
         "status": status,

@@ -35,7 +35,7 @@ Posts must contain the emoji in their text to match. Progress saved to `data/che
 
 ## Drafts (RSS + Grok + Cursor)
 
-Nothing posts until you approve and publish. Max **3 posts per category per UTC day**.
+Manual posting waits until you approve. `drafts autopost` skips that and posts on its own. Max **3 posts per category per UTC day**. One cron run creates at most one draft per category.
 
 ```bash
 cp feeds.yaml.example feeds.yaml
@@ -55,8 +55,22 @@ python -m x_automation.cli drafts reject <id>
 python -m x_automation.cli drafts publish            # dry-run
 python -m x_automation.cli drafts publish --execute
 
+python -m x_automation.cli drafts autopost --dry-run # fetch + approve, no post
+python -m x_automation.cli drafts autopost           # fetch, approve, post
+
 python -m x_automation.cli drafts stats
 ```
+
+Unattended posts run from cron at 8:00, 13:00, and 18:00 America/New_York:
+
+```bash
+chmod +x scripts/autopost.sh
+# crontab lines:
+# CRON_TZ=America/New_York
+# 0 8,13,18 * * * /home/wadeflavor/projects/x-automation/scripts/autopost.sh
+```
+
+Output is appended to `data/autopost.log`. News headlines become dry, sarcastic lines in a right-leaning voice (`voice: sarcastic_conservative` in `feeds.yaml`); tragic stories are dropped when Grok replies `SKIP`. Comedy uses `sarcastic_comedy` (the same slant when the source is politics or culture). Motocross stays on the race with `sarcastic_sports`. Voice text lives under `voices:` in `prompts.yaml`. Each category keeps its hashtags from `feeds.yaml`: `#News #Headlines`, `#Comedy #Jokes`, and `#Motocross #MX`. Links are left off so each post stays on the text-only X API rate. If an older local `prompts.yaml` has no `voices:` section, copy `prompts.yaml.example` over it.
 
 Cursor agents: drop JSON in `data/inbox/cursor/` → `import-inbox`. See [docs/CURSOR_AGENTS.md](docs/CURSOR_AGENTS.md).
 

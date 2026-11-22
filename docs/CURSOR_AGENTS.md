@@ -59,7 +59,7 @@ Rules:
 - category must be one of: news, manufacturing, comedy
 - max 260 chars in text (emoji tag added separately)
 - do NOT call the X API
-- comedy: absurdist dry tone; manufacturing: operator insight; news: neutral brief
+- dry, deadpan sarcasm. News, and comedy when the topic is politics or culture: right-leaning, skeptical of big government, bureaucracy, legacy media, and progressive talking points. Punch at ideas, institutions, and public conduct. No slurs, no attacks on protected groups, no invented facts or quotes. Motocross stays on the race.
 ```
 
 Replace the path with your machine's x-automation project path.

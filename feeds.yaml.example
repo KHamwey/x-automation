@@ -1,25 +1,77 @@
 defaults:
+  # Posts per category per UTC day. The cron runs three times a day.
   daily_publish_cap: 3
-  max_drafts_per_fetch: 5
+  # One new draft per category each run, three categories total.
+  max_drafts_per_fetch: 3
+  max_drafts_per_category: 1
 
 categories:
   news:
     tag: "🔴"
-    grok_style: news_brief
+    hashtags: ["#News", "#Headlines"]
+    grok_style: headline_joke
+    # Named voice from prompts.yaml (alias: tone).
+    voice: sarcastic_conservative
     feeds:
       - url: https://feeds.bbci.co.uk/news/rss.xml
-        include_url: true
-
-  manufacturing:
-    tag: "🏗"
-    grok_style: industry_take
-    feeds:
-      - url: https://www.manufacturing.net/rss/topic/2236-industry-40
-        include_url: true
+        include_url: false
+      - url: https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml
+        include_url: false
+      - url: https://www.theguardian.com/world/rss
+        include_url: false
+      - url: https://feeds.npr.org/1001/rss.xml
+        include_url: false
+      - url: https://abcnews.go.com/abcnews/topstories
+        include_url: false
+      - url: https://www.cbsnews.com/latest/rss/main
+        include_url: false
+      - url: https://feeds.nbcnews.com/nbcnews/public/news
+        include_url: false
+      - url: https://feeds.washingtonpost.com/rss/world
+        include_url: false
+      - url: https://www.aljazeera.com/xml/rss/all.xml
+        include_url: false
+      - url: https://feeds.foxnews.com/foxnews/latest
+        include_url: false
 
   comedy:
     tag: "👽"
+    hashtags: ["#Comedy", "#Jokes"]
     grok_style: absurdist
+    # Sarcastic. Conservative slant only when the source is politics or culture.
+    voice: sarcastic_comedy
     feeds:
       - url: https://www.theonion.com/rss
+        include_url: false
+      - url: https://thehardtimes.net/feed/
+        include_url: false
+      - url: https://clickhole.com/rss
+        include_url: false
+      - url: https://reductress.com/feed/
+        include_url: false
+      - url: https://babylonbee.com/feed
+        include_url: false
+
+  motocross:
+    tag: "🏁"
+    hashtags: ["#Motocross", "#MX"]
+    grok_style: race_brief
+    # Sarcasm about the race. Do not pull this category into politics.
+    voice: sarcastic_sports
+    feeds:
+      - url: https://motocrossactionmag.com/feed/
+        include_url: false
+      - url: https://www.vitalmx.com/rss.xml
+        include_url: false
+      - url: https://pulpmx.com/feed/
+        include_url: false
+      - url: https://mxvice.com/feed/
+        include_url: false
+      - url: https://www.swapmotolive.com/feed/
+        include_url: false
+      - url: https://www.fullnoise.com.au/feed/
+        include_url: false
+      - url: https://dirtbikemagazine.com/feed/
+        include_url: false
+      - url: https://www.cyclenews.com/rss
         include_url: false

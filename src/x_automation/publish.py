@@ -118,13 +118,17 @@ def run_publish(
     *,
     execute: bool = False,
     draft_id: str | None = None,
+    draft_ids: list[str] | None = None,
     daily_cap_override: int | None = None,
 ) -> PublishResult:
     cap = daily_cap_override if daily_cap_override is not None else daily_cap()
     result = PublishResult()
     rate_limiter = RateLimiter()
 
-    if draft_id:
+    if draft_ids is not None:
+        wanted = set(draft_ids)
+        candidates = [d for d in list_drafts() if d.get("id") in wanted]
+    elif draft_id:
         candidates = [d for d in list_drafts() if d.get("id") == draft_id]
     else:
         candidates = list_drafts("approved")
