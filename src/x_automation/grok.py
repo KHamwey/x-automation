@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import httpx
 import yaml
+
+from x_automation.mentions import MentionCandidate
 
 from x_automation.config import (
     DEFAULT_XAI_MODEL,
@@ -222,3 +226,127 @@ def transform_item(
         text = text[:277] + "..."
 
     return text
+
+
+@dataclass(frozen=True)
+class Annotations:
+    hashtags: list[str]
+    mentions: list[MentionCandidate]
+
+
+def _json_object(text: str) -> dict[str, Any]:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if not match:
+            return {}
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return {}
+    return data if isinstance(data, dict) else {}
+
+
+def parse_annotations(text: str) -> Annotations:
+    """Read hashtag and mention subjects from a Grok JSON reply.
+
+    A ``handle`` field is ignored. Handles are resolved later with the X API.
+    """
+    data = _json_object(text)
+    hashtags: list[str] = []
+    raw_tags = data.get("hashtags")
+    if isinstance(raw_tags, str):
+        raw_tags = [raw_tags]
+    for raw in raw_tags or []:
+        if isinstance(raw, str) and raw.strip():
+            hashtags.append(raw.strip())
+
+    mentions: list[MentionCandidate] = []
+    raw_mentions = data.get("mentions")
+    if isinstance(raw_mentions, dict):
+        raw_mentions = [raw_mentions]
+    for raw in raw_mentions or []:
+        if isinstance(raw, str):
+            name, kind = raw.strip(), ""
+        elif isinstance(raw, dict):
+            name = str(raw.get("name") or "").strip()
+            kind = str(raw.get("kind") or raw.get("type") or "").strip()
+        else:
+            continue
+        if not name:
+            continue
+        mentions.append(MentionCandidate(name=name, kind=kind))
+        if len(mentions) >= 4:
+            break
+    return Annotations(hashtags=hashtags[:4], mentions=mentions)
+
+
+def suggest_annotations(
+    *,
+    category: str,
+    title: str,
+    summary: str,
+    prompts_path: Path | None = None,
+    prompts: dict[str, Any] | None = None,
+) -> Annotations:
+    """Ask Grok for story hashtags and mention subjects.
+
+    Returns empty lists when ``annotations`` is missing from prompts.yaml or
+    the reply is not usable. Callers then keep the static-tag fallback and
+    tag nobody.
+    """
+    loaded = prompts if prompts is not None else load_prompts(prompts_path)
+    block = loaded.get("annotations")
+    if not isinstance(block, dict):
+        return Annotations(hashtags=[], mentions=[])
+    system_template = str(block.get("system") or "").strip()
+    user_template = str(block.get("user") or "").strip()
+    if not system_template or not user_template:
+        return Annotations(hashtags=[], mentions=[])
+
+    load_env()
+    api_key = get_env("XAI_API_KEY")
+    if not api_key:
+        return Annotations(hashtags=[], mentions=[])
+
+    variables = {
+        "title": title,
+        "summary": summary,
+        "category": category,
+    }
+    model = get_env("XAI_MODEL", DEFAULT_XAI_MODEL)
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _render_prompt(system_template, variables).strip()},
+            {"role": "user", "content": _render_prompt(user_template, variables).strip()},
+        ],
+        "temperature": float(block.get("temperature", 0.2)),
+        "max_tokens": int(block.get("max_tokens", 250)),
+    }
+
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(
+                f"{XAI_API_BASE}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            body = response.json()
+    except Exception:
+        return Annotations(hashtags=[], mentions=[])
+
+    choices = body.get("choices") or []
+    if not choices:
+        return Annotations(hashtags=[], mentions=[])
+    content = (choices[0].get("message") or {}).get("content") or ""
+    return parse_annotations(str(content))

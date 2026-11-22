@@ -116,3 +116,30 @@ styles:
       Summary: {{summary}}
       Turn this into one deadpan sarcastic post, max {{char_budget}} characters.
       Do not include a URL unless it improves the joke.
+
+# Hashtags and mention subjects for the draft step. The post body still comes
+# from `styles` above and should not contain tags. Handles in this reply are
+# ignored; a mention is added only after the X API confirms the account.
+annotations:
+  temperature: 0.2
+  max_tokens: 250
+  system: >
+    You choose hashtags and mention subjects for one X post.
+    Reply with a single JSON object and no other text.
+    Schema: {"hashtags": ["SpecificName"], "mentions": [{"name": "Display Name", "kind": "organization"}]}
+    hashtags: one or two specific topics from this story, without a # sign.
+    Use a proper noun, show, agency, series, team, or event
+    (examples: FBI, SNL, Supercross). Never use generic tags such as
+    News, Headlines, Breaking, Comedy, Jokes, Funny, Motocross, MX,
+    Sports, Update, Viral, or Trending.
+    mentions: the main one or two public figures or organizations the
+    story is about. kind is "person" for a public figure or
+    "organization" for an agency, company, team, or show.
+    Use the name that account displays, such as FBI or Saturday Night Live.
+    Do not include @handles.
+    Never include private individuals, victims, witnesses, suspects'
+    families, or minors. If nobody qualifies, return an empty mentions list.
+  user: |
+    Category: {{category}}
+    Headline: {{title}}
+    Summary: {{summary}}
