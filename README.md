@@ -70,7 +70,7 @@ chmod +x scripts/autopost.sh
 # 0 8,13,18 * * * /home/wadeflavor/projects/x-automation/scripts/autopost.sh
 ```
 
-Output is appended to `data/autopost.log`. News headlines are rewritten as jokes; tragic stories are dropped when Grok replies `SKIP`. Each category gets its own hashtags from `feeds.yaml`: `#News #Headlines`, `#Comedy #Jokes`, and `#Motocross #MX`. Links are left off so each post stays on the text-only X API rate.
+Output is appended to `data/autopost.log`. News headlines become dry, sarcastic lines in a right-leaning voice (`voice: sarcastic_conservative` in `feeds.yaml`); tragic stories are dropped when Grok replies `SKIP`. Comedy uses `sarcastic_comedy` (the same slant when the source is politics or culture). Motocross stays on the race with `sarcastic_sports`. Voice text lives under `voices:` in `prompts.yaml`. Each category keeps its hashtags from `feeds.yaml`: `#News #Headlines`, `#Comedy #Jokes`, and `#Motocross #MX`. Links are left off so each post stays on the text-only X API rate. If an older local `prompts.yaml` has no `voices:` section, copy `prompts.yaml.example` over it.
 
 Cursor agents: drop JSON in `data/inbox/cursor/` → `import-inbox`. See [docs/CURSOR_AGENTS.md](docs/CURSOR_AGENTS.md).
 

@@ -11,7 +11,7 @@ import yaml
 
 from x_automation.config import FEEDS_PATH, SEEN_RSS_PATH, ensure_data_dir
 from x_automation.drafts import add_draft, has_rss_draft
-from x_automation.grok import transform_item
+from x_automation.grok import category_voice_name, transform_item
 from x_automation.rss import FeedItem, fetch_feed_items
 
 
@@ -97,6 +97,7 @@ def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> Inge
         tag = category_cfg.get("tag", "")
         hashtags = [str(tag_name) for tag_name in (category_cfg.get("hashtags") or [])]
         grok_style = category_cfg.get("grok_style", "news_brief")
+        voice = category_voice_name(category_cfg)
         feeds = category_cfg.get("feeds") or []
         created_in_category = 0
 
@@ -137,6 +138,7 @@ def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> Inge
                         grok_style=grok_style,
                         include_url=include_url,
                         use_grok=use_grok,
+                        voice=voice,
                     )
                     if is_skipped_post(text):
                         result.skipped_filtered += 1
@@ -154,6 +156,7 @@ def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> Inge
                         metadata={
                             "rss_key": key,
                             "grok_style": grok_style if use_grok else None,
+                            "voice": voice if use_grok else None,
                             "title": item.title,
                         },
                     )
@@ -177,6 +180,7 @@ def _item_to_text(
     grok_style: str,
     include_url: bool,
     use_grok: bool,
+    voice: str | None = None,
 ) -> str:
     if use_grok:
         return transform_item(
@@ -186,6 +190,7 @@ def _item_to_text(
             summary=item.summary,
             link=item.link,
             include_url=include_url,
+            voice=voice,
         )
     text = item.title
     if include_url and item.link:
