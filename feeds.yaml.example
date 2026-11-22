@@ -1,24 +1,65 @@
 defaults:
   daily_publish_cap: 3
-  max_drafts_per_fetch: 5
+  max_drafts_per_category: 2
+  max_drafts_per_fetch: 14
 
 categories:
   news:
     tag: "🔴"
     grok_style: news_brief
     feeds:
-      - url: https://feeds.bbci.co.uk/news/rss.xml
+      - url: https://moxie.foxnews.com/google-publisher/latest.xml
+        include_url: true
+      - url: https://moxie.foxnews.com/google-publisher/politics.xml
         include_url: true
 
   manufacturing:
     tag: "🏗"
     grok_style: industry_take
     feeds:
-      - url: https://www.manufacturing.net/rss/topic/2236-industry-40
+      - url: https://www.manufacturing.net/rss.xml
+        include_url: true
+      - url: https://3dprint.com/feed/
+        include_url: true
+
+  cycling:
+    tag: "🚲"
+    grok_style: cycling_note
+    feeds:
+      - url: https://theradavist.com/feed/
+        include_url: true
+      - url: https://www.cyclingnews.com/feeds/all/
+        include_url: true
+
+  technology:
+    tag: "💻"
+    grok_style: tech_brief
+    feeds:
+      - url: https://feeds.arstechnica.com/arstechnica/index
+        include_url: true
+      - url: https://www.theverge.com/rss/index.xml
+        include_url: true
+
+  aliens:
+    tag: "👽"
+    grok_style: alien_brief
+    feeds:
+      - url: "https://www.liberationtimes.com/home?format=rss"
+        include_url: true
+      - url: https://www.space.com/feeds/tag/ufos
+        include_url: true
+
+  hardware:
+    tag: "🔌"
+    grok_style: hardware_note
+    feeds:
+      - url: https://blog.arduino.cc/feed/
+        include_url: true
+      - url: https://hackaday.com/feed/
         include_url: true
 
   comedy:
-    tag: "👽"
+    tag: "🎭"
     grok_style: absurdist
     feeds:
       - url: https://www.theonion.com/rss

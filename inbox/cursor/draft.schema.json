@@ -6,7 +6,7 @@
   "properties": {
     "category": {
       "type": "string",
-      "description": "Category name matching feeds.yaml (e.g. news, manufacturing, comedy)"
+      "description": "Category name matching feeds.yaml (news, manufacturing, cycling, technology, aliens, hardware, comedy)"
     },
     "text": {
       "type": "string",

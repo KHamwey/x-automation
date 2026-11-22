@@ -21,7 +21,7 @@ Example `data/inbox/cursor/comedy-001.json`:
 ```json
 {
   "category": "comedy",
-  "tag_emoji": "👽",
+  "tag_emoji": "🎭",
   "text": "Local man discovers cloud computing is just someone else's computer. Experts recommend denial.",
   "metadata": {
     "agent": "cursor-comedy",
@@ -56,10 +56,10 @@ the schema in inbox/cursor/draft.schema.json. Save to:
   /Users/kylehamwey/Projects/x-automation/data/inbox/cursor/{timestamp}-{category}.json
 
 Rules:
-- category must be one of: news, manufacturing, comedy
+- category must be one of: news, manufacturing, cycling, technology, aliens, hardware, comedy
 - max 260 chars in text (emoji tag added separately)
 - do NOT call the X API
-- comedy: absurdist dry tone; manufacturing: operator insight; news: neutral brief
+- news: neutral brief; manufacturing: operator insight, including 3D printing; cycling: fixed-gear and bike culture; technology: specific and neutral; aliens: straight UFO/UAP reporting; hardware: PCB, Arduino, and maker electronics; comedy: absurdist dry tone
 ```
 
 Replace the path with your machine's x-automation project path.
