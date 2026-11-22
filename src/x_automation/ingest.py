@@ -72,7 +72,12 @@ def _rss_key(feed_url: str, guid: str) -> str:
     return f"{feed_url}:{guid}"
 
 
-def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> IngestResult:
+def run_ingest(
+    *,
+    use_grok: bool = True,
+    feeds_path: Path | None = None,
+    use_preferences: bool = True,
+) -> IngestResult:
     config = load_feeds_config(feeds_path)
     defaults = config.get("defaults") or {}
     max_drafts = int(defaults.get("max_drafts_per_fetch", 14))
@@ -82,15 +87,28 @@ def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> Inge
     seen = _load_seen()
     result = IngestResult()
     created = 0
+    names = [str(name) for name in categories.keys()]
+    weights: dict[str, float] = {}
+    if use_preferences:
+        from x_automation.analytics import load_category_weights, order_categories
 
-    for category_name, category_cfg in categories.items():
+        weights = load_category_weights()
+        names = order_categories(names, weights)
+
+    for category_name in names:
         if created >= max_drafts:
             break
+        category_cfg = categories[category_name]
 
         tag = category_cfg.get("tag", "")
         grok_style = category_cfg.get("grok_style", "news_brief")
         feeds = category_cfg.get("feeds") or []
-        category_budget = min(per_category, max_drafts - created)
+        category_budget = _category_draft_budget(
+            per_category,
+            max_drafts - created,
+            weight=weights.get(category_name, 1.0),
+            use_preferences=use_preferences,
+        )
         fetch_limit = max(category_budget * 4, 8)
 
         queues: list[tuple[bool, list[FeedItem]]] = []
@@ -167,6 +185,30 @@ def run_ingest(*, use_grok: bool = True, feeds_path: Path | None = None) -> Inge
 
     _save_seen(seen)
     return result
+
+
+def _category_draft_budget(
+    per_category: int,
+    remaining: int,
+    *,
+    weight: float,
+    use_preferences: bool,
+) -> int:
+    """Drafts to attempt for one category, still inside the fetch cap.
+
+    Preferences scale ``max_drafts_per_category`` by engagement weight.
+    The result is at least 1 when preferences are on, and at most twice
+    the base budget. The fetch cap can still stop the walk early.
+    """
+    if use_preferences:
+        from x_automation.analytics import draft_budget
+
+        intended = draft_budget(per_category, weight)
+    else:
+        intended = per_category
+    if remaining < 1:
+        return 0
+    return min(intended, remaining)
 
 
 def _item_to_text(

@@ -35,7 +35,7 @@ Posts must contain the emoji in their text to match. Progress saved to `data/che
 
 ## Drafts (RSS + Grok + Cursor)
 
-Nothing posts until you approve and publish. Max **3 posts per category per UTC day**.
+Nothing posts until you approve and publish. Max **3 posts per category per UTC day**. After `drafts analytics`, fetch scales each category's draft budget by that category's engagement.
 
 ```bash
 cp feeds.yaml.example feeds.yaml
@@ -45,6 +45,7 @@ cp tags.json.example data/tags.json
 
 python -m x_automation.cli drafts fetch              # RSS → Grok → pending
 python -m x_automation.cli drafts fetch --no-grok    # RSS only, no xAI
+python -m x_automation.cli drafts fetch --no-preferences  # ignore engagement weights
 
 python -m x_automation.cli drafts import-inbox       # from data/inbox/cursor/
 
@@ -56,6 +57,7 @@ python -m x_automation.cli drafts publish            # dry-run
 python -m x_automation.cli drafts publish --execute
 
 python -m x_automation.cli drafts stats
+python -m x_automation.cli drafts analytics          # score posts, write weights
 ```
 
 Cursor agents: drop JSON in `data/inbox/cursor/` → `import-inbox`. See [docs/CURSOR_AGENTS.md](docs/CURSOR_AGENTS.md).
