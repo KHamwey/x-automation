@@ -1,9 +1,9 @@
 defaults:
   # Posts per category per UTC day. The cron runs three times a day.
   daily_publish_cap: 3
-  # One new draft per category each run, three categories total.
-  max_drafts_per_fetch: 3
-  max_drafts_per_category: 1
+  # Rotate across categories so the first feed does not consume the whole run.
+  max_drafts_per_fetch: 14
+  max_drafts_per_category: 2
 
 categories:
   news:
@@ -22,29 +22,102 @@ categories:
     # Named voice from prompts.yaml (alias: tone).
     voice: sarcastic_conservative
     feeds:
+      - url: https://moxie.foxnews.com/google-publisher/latest.xml
+        include_url: true
+      - url: https://moxie.foxnews.com/google-publisher/politics.xml
+        include_url: true
       - url: https://feeds.bbci.co.uk/news/rss.xml
         include_url: false
       - url: https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml
         include_url: false
-      - url: https://www.theguardian.com/world/rss
-        include_url: false
-      - url: https://feeds.npr.org/1001/rss.xml
-        include_url: false
-      - url: https://abcnews.go.com/abcnews/topstories
-        include_url: false
-      - url: https://www.cbsnews.com/latest/rss/main
-        include_url: false
-      - url: https://feeds.nbcnews.com/nbcnews/public/news
-        include_url: false
-      - url: https://feeds.washingtonpost.com/rss/world
-        include_url: false
-      - url: https://www.aljazeera.com/xml/rss/all.xml
-        include_url: false
-      - url: https://feeds.foxnews.com/foxnews/latest
-        include_url: false
+
+  manufacturing:
+    tag: "🏗"
+    hashtags: ["#Manufacturing", "#Industry"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
+    grok_style: industry_take
+    voice: sarcastic_conservative
+    feeds:
+      - url: https://www.manufacturing.net/rss.xml
+        include_url: true
+      - url: https://3dprint.com/feed/
+        include_url: true
+
+  cycling:
+    tag: "🚲"
+    hashtags: ["#Cycling", "#Bikes"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
+    grok_style: cycling_note
+    voice: sarcastic_sports
+    feeds:
+      - url: https://theradavist.com/feed/
+        include_url: true
+      - url: https://www.cyclingnews.com/feeds/all/
+        include_url: true
+
+  technology:
+    tag: "💻"
+    hashtags: ["#Tech", "#Technology"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
+    grok_style: tech_brief
+    voice: sarcastic_conservative
+    feeds:
+      - url: https://feeds.arstechnica.com/arstechnica/index
+        include_url: true
+      - url: https://www.theverge.com/rss/index.xml
+        include_url: true
+
+  aliens:
+    tag: "👽"
+    hashtags: ["#UFO", "#UAP"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
+    grok_style: alien_brief
+    voice: sarcastic_conservative
+    feeds:
+      - url: "https://www.liberationtimes.com/home?format=rss"
+        include_url: true
+      - url: https://www.space.com/feeds/tag/ufos
+        include_url: true
+
+  hardware:
+    tag: "🔌"
+    hashtags: ["#Hardware", "#Maker"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
+    grok_style: hardware_note
+    voice: sarcastic_conservative
+    feeds:
+      - url: https://blog.arduino.cc/feed/
+        include_url: true
+      - url: https://hackaday.com/feed/
+        include_url: true
 
   comedy:
-    tag: "👽"
+    tag: "🎭"
     hashtags: ["#Comedy", "#Jokes"]
     topic_hashtags: true
     keep_static_hashtags: 1
@@ -87,12 +160,4 @@ categories:
       - url: https://pulpmx.com/feed/
         include_url: false
       - url: https://mxvice.com/feed/
-        include_url: false
-      - url: https://www.swapmotolive.com/feed/
-        include_url: false
-      - url: https://www.fullnoise.com.au/feed/
-        include_url: false
-      - url: https://dirtbikemagazine.com/feed/
-        include_url: false
-      - url: https://www.cyclenews.com/rss
         include_url: false

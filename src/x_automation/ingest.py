@@ -179,12 +179,13 @@ def run_ingest(
     *,
     use_grok: bool = True,
     feeds_path: Path | None = None,
+    use_preferences: bool = True,
     client: Any = None,
 ) -> IngestResult:
     config = load_feeds_config(feeds_path)
     defaults = config.get("defaults") or {}
-    max_drafts = int(defaults.get("max_drafts_per_fetch", 5))
-    max_per_category = int(defaults.get("max_drafts_per_category", max_drafts))
+    max_drafts = int(defaults.get("max_drafts_per_fetch", 14))
+    per_category = int(defaults.get("max_drafts_per_category", 2))
     categories = config.get("categories") or {}
 
     seen = _load_seen()
@@ -209,104 +210,157 @@ def run_ingest(
             return None
         return mention_client
 
-    for category_name, category_cfg in categories.items():
+    names = [str(name) for name in categories.keys()]
+    weights: dict[str, float] = {}
+    if use_preferences:
+        from x_automation.analytics import load_category_weights, order_categories
+
+        weights = load_category_weights()
+        names = order_categories(names, weights)
+
+    for category_name in names:
         if created >= max_drafts:
             break
+        category_cfg = categories[category_name]
         tag = category_cfg.get("tag", "")
         static_hashtags = [str(tag_name) for tag_name in (category_cfg.get("hashtags") or [])]
         engagement = resolve_engagement(category_cfg, defaults)
         grok_style = category_cfg.get("grok_style", "news_brief")
         voice = category_voice_name(category_cfg)
         feeds = category_cfg.get("feeds") or []
-        created_in_category = 0
+        category_budget = _category_draft_budget(
+            per_category,
+            max_drafts - created,
+            weight=weights.get(category_name, 1.0),
+            use_preferences=use_preferences,
+        )
+        fetch_limit = max(category_budget * 4, 8)
 
+        queues: list[tuple[bool, list[FeedItem]]] = []
         for feed_entry in feeds:
-            if created >= max_drafts or created_in_category >= max_per_category:
-                break
-
             feed_url = feed_entry.get("url")
             if not feed_url:
                 continue
             include_url = bool(feed_entry.get("include_url", True))
-
             result.feeds_checked += 1
             try:
-                items = fetch_feed_items(feed_url, max_items=max(max_drafts, 10))
+                items = fetch_feed_items(feed_url, max_items=fetch_limit)
             except Exception as exc:
                 result.errors += 1
                 result.error_details.append(f"{feed_url}: {exc}")
                 continue
+            queues.append((include_url, items))
 
-            for item in items:
-                if created >= max_drafts or created_in_category >= max_per_category:
+        indexes = [0] * len(queues)
+        category_created = 0
+        while category_created < category_budget and created < max_drafts:
+            progressed = False
+            for i, (include_url, items) in enumerate(queues):
+                if category_created >= category_budget or created >= max_drafts:
                     break
-                result.items_seen += 1
-                key = _rss_key(item.feed_url, item.guid)
-                if key in seen:
-                    result.skipped_seen += 1
-                    continue
-                if has_rss_draft(item.feed_url, item.guid):
-                    result.skipped_duplicate += 1
-                    seen.add(key)
-                    continue
+                while indexes[i] < len(items):
+                    item = items[indexes[i]]
+                    indexes[i] += 1
+                    result.items_seen += 1
+                    key = _rss_key(item.feed_url, item.guid)
+                    if key in seen:
+                        result.skipped_seen += 1
+                        continue
+                    if has_rss_draft(item.feed_url, item.guid):
+                        result.skipped_duplicate += 1
+                        seen.add(key)
+                        continue
 
-                try:
-                    text = _item_to_text(
-                        item,
-                        category=category_name,
-                        grok_style=grok_style,
-                        include_url=include_url,
-                        use_grok=use_grok,
-                        voice=voice,
-                        char_budget=_char_budget(engagement, str(tag)),
-                    )
-                    if is_skipped_post(text):
-                        result.skipped_filtered += 1
-                        seen.add(key)
-                        continue
-                    text, hashtags, handles = _decorate_post(
-                        text,
-                        item,
-                        category=category_name,
-                        static_hashtags=static_hashtags,
-                        engagement=engagement,
-                        use_grok=use_grok,
-                        client_for_mentions=client_for_mentions,
-                    )
-                    if not text.strip():
-                        result.skipped_filtered += 1
-                        seen.add(key)
-                        continue
-                    draft = add_draft(
-                        category=category_name,
-                        text=text,
-                        tag_emoji=tag,
-                        hashtags=hashtags,
-                        mentions=handles,
-                        source="rss+grok" if use_grok else "rss",
-                        source_url=item.link,
-                        rss_guid=item.guid,
-                        feed_url=item.feed_url,
-                        metadata={
-                            "rss_key": key,
-                            "grok_style": grok_style if use_grok else None,
-                            "voice": voice if use_grok else None,
-                            "title": item.title,
-                            "hashtags": hashtags,
-                            "mentions": handles,
-                        },
-                    )
+                    try:
+                        text = _item_to_text(
+                            item,
+                            category=category_name,
+                            grok_style=grok_style,
+                            include_url=include_url,
+                            use_grok=use_grok,
+                            voice=voice,
+                            char_budget=_char_budget(engagement, str(tag)),
+                        )
+                        if is_skipped_post(text):
+                            result.skipped_filtered += 1
+                            seen.add(key)
+                            progressed = True
+                            break
+                        text, hashtags, handles = _decorate_post(
+                            text,
+                            item,
+                            category=category_name,
+                            static_hashtags=static_hashtags,
+                            engagement=engagement,
+                            use_grok=use_grok,
+                            client_for_mentions=client_for_mentions,
+                        )
+                        if not text.strip():
+                            result.skipped_filtered += 1
+                            seen.add(key)
+                            progressed = True
+                            break
+                        draft = add_draft(
+                            category=category_name,
+                            text=text,
+                            tag_emoji=tag,
+                            hashtags=hashtags,
+                            mentions=handles,
+                            source="rss+grok" if use_grok else "rss",
+                            source_url=item.link,
+                            rss_guid=item.guid,
+                            feed_url=item.feed_url,
+                            metadata={
+                                "rss_key": key,
+                                "grok_style": grok_style if use_grok else None,
+                                "voice": voice if use_grok else None,
+                                "title": item.title,
+                                "hashtags": hashtags,
+                                "mentions": handles,
+                            },
+                        )
+                    except Exception as exc:
+                        result.errors += 1
+                        result.error_details.append(f"{key}: {exc}")
+                        progressed = True
+                        break
+
                     seen.add(key)
                     created += 1
-                    created_in_category += 1
+                    category_created += 1
                     result.drafts_created += 1
                     result.created_ids.append(draft["id"])
-                except Exception as exc:
-                    result.errors += 1
-                    result.error_details.append(f"{key}: {exc}")
+                    progressed = True
+                    break
+            if not progressed:
+                break
 
     _save_seen(seen)
     return result
+
+
+def _category_draft_budget(
+    per_category: int,
+    remaining: int,
+    *,
+    weight: float,
+    use_preferences: bool,
+) -> int:
+    """Drafts to attempt for one category, still inside the fetch cap.
+
+    Preferences scale ``max_drafts_per_category`` by engagement weight.
+    The result is at least 1 when preferences are on, and at most twice
+    the base budget. The fetch cap can still stop the walk early.
+    """
+    if use_preferences:
+        from x_automation.analytics import draft_budget
+
+        intended = draft_budget(per_category, weight)
+    else:
+        intended = per_category
+    if remaining < 1:
+        return 0
+    return min(intended, remaining)
 
 
 def _decorate_post(

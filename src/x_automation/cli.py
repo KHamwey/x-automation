@@ -5,6 +5,12 @@ from __future__ import annotations
 import argparse
 import sys
 
+from x_automation.analytics import (
+    print_analytics,
+    published_post_ids,
+    run_analytics,
+    top_category_summary,
+)
 from x_automation.auth import run_auth_setup
 from x_automation.config import DEFAULT_API_BASE_URL, create_client
 from x_automation.delete import print_summary, run_delete
@@ -50,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-grok",
         action="store_true",
         help="Skip Grok; use raw RSS titles (for testing)",
+    )
+    fetch_p.add_argument(
+        "--no-preferences",
+        action="store_true",
+        help="Ignore engagement weights and use the plain per-category draft budget",
     )
     fetch_p.set_defaults(func=cmd_drafts_fetch)
 
@@ -105,6 +116,13 @@ def build_parser() -> argparse.ArgumentParser:
     stats_p = drafts_sub.add_parser("stats", help="Show today's publish counts vs daily cap")
     stats_p.set_defaults(func=cmd_drafts_stats)
 
+    analytics_p = drafts_sub.add_parser(
+        "analytics",
+        help="Score published posts and write category engagement weights",
+    )
+    analytics_p.add_argument("--api-base-url", default=None)
+    analytics_p.set_defaults(func=cmd_drafts_analytics)
+
     return parser
 
 
@@ -153,7 +171,10 @@ def _run_delete_command(args: argparse.Namespace, emoji_filter: str | None) -> i
 
 def cmd_drafts_fetch(args: argparse.Namespace) -> int:
     try:
-        result = run_ingest(use_grok=not args.no_grok)
+        result = run_ingest(
+            use_grok=not args.no_grok,
+            use_preferences=not args.no_preferences,
+        )
         print_ingest_summary(result)
         return 0 if result.errors == 0 else 1
     except Exception as exc:
@@ -274,7 +295,28 @@ def cmd_drafts_stats(_args: argparse.Namespace) -> int:
     else:
         for category, count in sorted(counts.items()):
             print(f"  {category}: {count}/{cap}")
+    summary = top_category_summary()
+    if summary:
+        print(
+            f"  Top category: {summary['category']} "
+            f"(mean {summary['mean_score']:.2f}, "
+            f"weight {summary['weight']:.2f}, "
+            f"{summary['sample_size']} posts)"
+        )
     return 0
+
+
+def cmd_drafts_analytics(args: argparse.Namespace) -> int:
+    try:
+        client = None
+        if published_post_ids():
+            client = create_client(base_url=args.api_base_url)
+        result = run_analytics(client)
+        print_analytics(result)
+        return 0
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:

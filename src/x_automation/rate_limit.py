@@ -25,6 +25,8 @@ import requests
 BUCKET_CONFIG = {
     # GET /2/users/:id/tweets — 900/15min documented; light pacing only.
     "timeline": {"limit": 850, "window_sec": 900, "min_interval": 0.1},
+    # GET /2/tweets?ids= — lookup by id for engagement metrics.
+    "lookup": {"limit": 250, "window_sec": 900, "min_interval": 0.2},
     # DELETE /2/tweets/:id — 50/15min documented; ~20s spacing ≈ 45/15min.
     "delete": {"limit": 45, "window_sec": 900, "min_interval": 20.0},
     # GET /2/users/me — called once per run.

@@ -35,7 +35,7 @@ Posts must contain the emoji in their text to match. Progress saved to `data/che
 
 ## Drafts (RSS + Grok + Cursor)
 
-Manual posting waits until you approve. `drafts autopost` skips that and posts on its own. Max **3 posts per category per UTC day**. One cron run creates at most one draft per category.
+Manual posting waits until you approve. `drafts autopost` skips that and posts on its own. Max **3 posts per category per UTC day**. Fetch rotates across categories so the first feed does not starve the rest. After `drafts analytics`, fetch also scales each category's draft budget by engagement.
 
 ```bash
 cp feeds.yaml.example feeds.yaml
@@ -45,6 +45,7 @@ cp tags.json.example data/tags.json
 
 python -m x_automation.cli drafts fetch              # RSS → Grok → pending
 python -m x_automation.cli drafts fetch --no-grok    # RSS only, no xAI
+python -m x_automation.cli drafts fetch --no-preferences  # ignore engagement weights
 
 python -m x_automation.cli drafts import-inbox       # from data/inbox/cursor/
 
@@ -59,6 +60,7 @@ python -m x_automation.cli drafts autopost --dry-run # fetch + approve, no post
 python -m x_automation.cli drafts autopost           # fetch, approve, post
 
 python -m x_automation.cli drafts stats
+python -m x_automation.cli drafts analytics          # score posts, write weights
 ```
 
 Unattended posts run from cron at 8:00, 13:00, and 18:00 America/New_York:
