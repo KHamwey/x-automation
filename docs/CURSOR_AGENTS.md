@@ -59,7 +59,7 @@ Rules:
 - category must be one of: news, manufacturing, cycling, technology, aliens, hardware, comedy
 - max 260 chars in text (emoji tag added separately)
 - do NOT call the X API
-- news: neutral brief; manufacturing: operator insight, including 3D printing; cycling: fixed-gear and bike culture; technology: specific and neutral; aliens: straight UFO/UAP reporting; hardware: PCB, Arduino, and maker electronics; comedy: absurdist dry tone
+- dry, deadpan sarcasm. News, and comedy when the topic is politics or culture: right-leaning, skeptical of big government, bureaucracy, legacy media, and progressive talking points. Punch at ideas, institutions, and public conduct. No slurs, no attacks on protected groups, no invented facts or quotes. Motocross and cycling stay on the sport. Manufacturing: operator insight, including 3D printing. Technology: specific and neutral. Aliens: straight UFO/UAP reporting. Hardware: PCB, Arduino, and maker electronics. Comedy: absurdist dry tone.
 ```
 
 Replace the path with your machine's x-automation project path.

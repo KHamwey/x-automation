@@ -1,180 +1,613 @@
-"""Scoring and engagement-weight math. No network."""
+"""Hashtag selection, length trimming, and mention verification.
+
+These tests never call X or xAI. User lookup and chat completions are faked.
+"""
 
 from __future__ import annotations
 
-import sys
+import json
+import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
+from unittest.mock import patch
 
-SRC = Path(__file__).resolve().parents[1] / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+import yaml
 
-from x_automation.analytics import (  # noqa: E402
-    category_weights,
-    draft_budget,
-    next_metric_fields,
-    order_categories,
-    score_post,
+from x_automation.drafts import (
+    append_hashtags,
+    compose_post_text,
+    ensure_tag_prefix,
+    select_hashtags,
+    strip_generated_tags,
 )
+from x_automation.grok import parse_annotations, suggest_annotations
+from x_automation.ingest import resolve_engagement, run_ingest
+from x_automation.mentions import MentionCandidate, verify_mentions
+from x_automation.rss import FeedItem
+
+ROOT = Path(__file__).resolve().parents[1]
+PROMPTS_EXAMPLE = ROOT / "prompts.yaml.example"
+FEEDS_EXAMPLE = ROOT / "feeds.yaml.example"
 
 
-class ScorePostTests(unittest.TestCase):
-    def test_weighted_public_counts(self) -> None:
-        score = score_post(
-            {
-                "like_count": 1,
-                "retweet_count": 2,
-                "reply_count": 3,
-                "quote_count": 4,
-            }
+class HashtagSelectionTests(unittest.TestCase):
+    def test_topic_tags_plus_one_static_tag(self) -> None:
+        chosen = select_hashtags(
+            ["FBI", "S.N.L.", "Breaking", "News"],
+            ["#News", "#Headlines"],
+            keep_static=1,
+            max_topic=2,
+            max_total=3,
         )
-        self.assertEqual(score, 1 + 4 + 6 + 12)
+        self.assertEqual(chosen, ["#FBI", "#SNL", "#News"])
 
-    def test_impressions_add_one_point_per_hundred(self) -> None:
-        score = score_post({"like_count": 1}, impression_count=250)
-        self.assertEqual(score, 3.5)
-
-    def test_missing_counts_and_impressions_add_nothing(self) -> None:
-        self.assertEqual(score_post({}), 0)
-        self.assertEqual(score_post(None), 0)
-        self.assertEqual(score_post({"like_count": 2}, impression_count=None), 2)
-        self.assertEqual(score_post({"bookmark_count": 40}), 0)
-
-
-class WeightTests(unittest.TestCase):
-    def test_samples_under_three_stay_neutral(self) -> None:
-        weights = category_weights(
-            {
-                "news": [100, 100],
-                "comedy": [],
-            }
+    def test_drops_generic_topic_tags_and_keeps_specific_ones(self) -> None:
+        chosen = select_hashtags(
+            ["#Comedy", "Jokes", "Supercross"],
+            ["#Motocross", "#MX"],
+            keep_static=1,
         )
-        self.assertEqual(weights["news"], 1.0)
-        self.assertEqual(weights["comedy"], 1.0)
+        self.assertEqual(chosen, ["#Supercross", "#Motocross"])
 
-    def test_weight_is_category_mean_over_median_mean(self) -> None:
-        weights = category_weights(
-            {
-                "low": [0, 10, 20],
-                "high": [30, 30, 30],
-            }
+    def test_keep_static_zero_omits_category_tags(self) -> None:
+        chosen = select_hashtags(
+            ["#FBI", "#SNL", "#Extra"],
+            ["#News", "#Headlines"],
+            keep_static=0,
+            max_topic=2,
+            max_total=3,
         )
-        self.assertEqual(weights["low"], 0.5)
-        self.assertEqual(weights["high"], 1.5)
+        self.assertEqual(chosen, ["#FBI", "#SNL"])
 
-    def test_weights_clamp_between_half_and_double(self) -> None:
-        weights = category_weights(
-            {
-                "tiny": [1, 1, 1],
-                "mid": [10, 10, 10],
-                "huge": [1000, 1000, 1000],
-            }
+    def test_clamps_counts_and_dedupes(self) -> None:
+        chosen = select_hashtags(
+            ["#FBI", "fbi", "#SNL", "#NASA"],
+            ["#FBI", "#News", "#Headlines"],
+            keep_static=5,
+            max_topic=9,
+            max_total=9,
         )
-        self.assertEqual(weights["tiny"], 0.5)
-        self.assertEqual(weights["mid"], 1.0)
-        self.assertEqual(weights["huge"], 2.0)
+        self.assertEqual(chosen, ["#FBI", "#SNL", "#News"])
 
-    def test_small_samples_do_not_move_the_median(self) -> None:
-        weights = category_weights(
-            {
-                "established": [10, 10, 10],
-                "other": [30, 30, 30],
-                "new": [1000],
-            }
+    def test_total_cap_drops_static_tag_after_topic_tags(self) -> None:
+        chosen = select_hashtags(
+            ["FBI", "SNL"],
+            ["#News"],
+            keep_static=1,
+            max_topic=2,
+            max_total=2,
         )
-        self.assertEqual(weights["established"], 0.5)
-        self.assertEqual(weights["other"], 1.5)
-        self.assertEqual(weights["new"], 1.0)
+        self.assertEqual(chosen, ["#FBI", "#SNL"])
 
-    def test_even_number_of_means_uses_the_average_of_the_middle(self) -> None:
-        weights = category_weights(
-            {
-                "a": [10, 10, 10],
-                "b": [20, 20, 20],
-                "c": [30, 30, 30],
-                "d": [40, 40, 40],
-            }
+    def test_invalid_tokens_are_skipped(self) -> None:
+        chosen = select_hashtags(["#", "1", "!!", "A"], ["#News"], keep_static=1)
+        self.assertEqual(chosen, ["#News"])
+
+
+class LengthTrimmingTests(unittest.TestCase):
+    def test_compose_without_mentions_matches_append_hashtags(self) -> None:
+        text = "Hello world"
+        self.assertEqual(
+            compose_post_text(text, "", ["news", "tech"]),
+            append_hashtags(ensure_tag_prefix(text, ""), ["news", "tech"]),
         )
-        self.assertAlmostEqual(weights["a"], 0.5)
-        self.assertAlmostEqual(weights["b"], 0.8)
-        self.assertAlmostEqual(weights["c"], 1.2)
-        self.assertAlmostEqual(weights["d"], 1.6)
 
-    def test_zero_means_stay_neutral_and_a_spike_takes_the_ceiling(self) -> None:
-        weights = category_weights(
-            {
-                "flat": [0, 0, 0],
-                "flat2": [0, 0, 0],
-                "spike": [9, 9, 9],
-            }
+    def test_mentions_follow_the_body_and_stay_within_limit(self) -> None:
+        out = compose_post_text(
+            "The bureau found another memo.",
+            "🔴",
+            ["#FBI", "#News"],
+            ["@FBI", "@SNL", "@NASA"],
         )
-        self.assertEqual(weights["flat"], 1.0)
-        self.assertEqual(weights["flat2"], 1.0)
-        self.assertEqual(weights["spike"], 2.0)
+        self.assertTrue(out.startswith("🔴 "))
+        self.assertFalse(out.lstrip().startswith("@"))
+        self.assertIn("@FBI", out)
+        self.assertIn("@SNL", out)
+        self.assertNotIn("@NASA", out)
+        self.assertTrue(out.index("@FBI") < out.index("#FBI"))
+        self.assertLessEqual(len(out), 280)
+        self.assertIn("memo", out)
 
-    def test_one_qualified_category_is_its_own_median(self) -> None:
-        self.assertEqual(category_weights({"only": [5, 5, 5]})["only"], 1.0)
-
-    def test_higher_weight_is_ordered_first(self) -> None:
-        ordered = order_categories(
-            ["news", "comedy", "cycling"],
-            {"news": 1.0, "comedy": 2.0, "cycling": 1.0},
+    def test_link_survives_hashtags_and_mentions(self) -> None:
+        out = compose_post_text(
+            "Story https://example.com/item",
+            "",
+            ["#FBI"],
+            ["@FBI"],
         )
-        self.assertEqual(ordered, ["comedy", "news", "cycling"])
+        self.assertIn("https://example.com/item", out)
+        self.assertIn("@FBI", out)
+        self.assertIn("#FBI", out)
+        self.assertLessEqual(len(out), 280)
+        self.assertFalse(out.startswith("@"))
 
+    def test_hashtags_do_not_replace_the_body(self) -> None:
+        body = "Breaking: markets rally on rate cut hopes"
+        out = compose_post_text(body, "", ["#" + ("x" * 300), "#FBI"], ["@" + ("y" * 30)])
+        self.assertTrue(out.startswith("Breaking"))
+        self.assertIn("#FBI", out)
+        self.assertNotIn("@" + ("y" * 30), out)
+        self.assertLessEqual(len(out), 280)
 
-class DraftBudgetTests(unittest.TestCase):
-    def test_neutral_weight_keeps_the_base_budget(self) -> None:
-        self.assertEqual(draft_budget(2, 1.0), 2)
+    def test_long_body_is_shortened_not_discarded(self) -> None:
+        body = "A" * 270
+        out = compose_post_text(body, "", ["#FBI", "#SNL"], ["@FBI"], limit=280)
+        self.assertLessEqual(len(out), 280)
+        self.assertTrue(out.startswith("A"))
+        self.assertGreater(out.count("A"), 20)
+        self.assertIn("@FBI", out)
 
-    def test_budget_never_drops_to_zero(self) -> None:
-        self.assertEqual(draft_budget(2, 0.1), 1)
-        self.assertEqual(draft_budget(1, 0.5), 1)
+    def test_leading_mention_is_not_how_the_post_opens(self) -> None:
+        out = compose_post_text("@FBI found a memo", "", ["#FBI"], ["@FBI"])
+        self.assertEqual(out, "found a memo @FBI #FBI")
+        self.assertFalse(out.startswith("@"))
 
-    def test_budget_caps_at_double_the_base(self) -> None:
-        self.assertEqual(draft_budget(2, 2.0), 4)
-        self.assertEqual(draft_budget(2, 5.0), 4)
-
-    def test_budget_rounds_to_the_nearest_draft(self) -> None:
-        self.assertEqual(draft_budget(2, 1.2), 2)
-        self.assertEqual(draft_budget(2, 1.4), 3)
-
-
-class MetricFallbackTests(unittest.TestCase):
-    def test_named_private_field_is_dropped(self) -> None:
-        reduced = next_metric_fields(
-            ["public_metrics", "organic_metrics", "non_public_metrics"],
-            400,
-            '{"detail": "The `non_public_metrics` field is not available"}',
+    def test_url_fragment_is_not_stripped_as_a_hashtag(self) -> None:
+        cleaned = strip_generated_tags(
+            "Read https://example.com/story#section today #News @FBI",
+            hashtags=True,
+            mentions=True,
         )
-        self.assertEqual(reduced, ["public_metrics", "organic_metrics"])
+        self.assertIn("https://example.com/story#section", cleaned)
+        self.assertNotIn("#News", cleaned)
+        self.assertNotIn("@FBI", cleaned)
 
-    def test_unnamed_rejection_falls_back_to_public_metrics(self) -> None:
-        reduced = next_metric_fields(
-            ["public_metrics", "organic_metrics", "non_public_metrics"],
-            403,
-            '{"title": "Forbidden", "detail": "Not authorized"}',
+
+class _Users:
+    def __init__(self, pages: list[dict] | None = None, error: Exception | None = None) -> None:
+        self.pages = pages or []
+        self.error = error
+        self.queries: list[str] = []
+        self.pages_pulled = 0
+
+    def search(self, query: str, max_results: int | None = None, user_fields: list[str] | None = None, **kwargs: object):
+        self.queries.append(query)
+        if self.error is not None:
+            raise self.error
+        self.pages_pulled += 1
+        yield {"data": self.pages}
+        self.pages_pulled += 1
+        yield {"data": [{"id": "other", "name": "Other", "username": "Other", "verified": True}]}
+
+
+class _Client:
+    def __init__(self, users: _Users) -> None:
+        self.users = users
+        self.access_token = None
+        self.bearer_token = None
+        self.oauth2_auth = None
+        self.session = type("Session", (), {"headers": {}})()
+
+
+def _user(name: str, username: str, **extra: object) -> dict:
+    user = {
+        "id": username,
+        "name": name,
+        "username": username,
+        "verified": True,
+        "verified_type": "government",
+        "parody": False,
+    }
+    user.update(extra)
+    return user
+
+
+class MentionVerificationTests(unittest.TestCase):
+    def test_verified_display_name_match_is_tagged(self) -> None:
+        users = _Users([_user("FBI", "FBI")])
+        handles = verify_mentions(
+            [{"name": "FBI", "kind": "organization", "handle": "DefinitelyFake"}],
+            client=_Client(users),
         )
-        self.assertEqual(reduced, ["public_metrics"])
+        self.assertEqual(handles, ["@FBI"])
+        self.assertEqual(users.queries, ["FBI"])
+        self.assertEqual(users.pages_pulled, 1)
 
-    def test_auth_failure_is_not_a_field_fallback(self) -> None:
-        self.assertIsNone(
-            next_metric_fields(
-                ["public_metrics", "organic_metrics", "non_public_metrics"],
-                401,
-                "Unauthorized",
+    def test_guessed_handle_is_not_used_when_the_name_does_not_match(self) -> None:
+        users = _Users([_user("Someone Else", "DefinitelyFake")])
+        handles = verify_mentions(
+            [{"name": "FBI", "kind": "organization", "handle": "DefinitelyFake"}],
+            client=_Client(users),
+        )
+        self.assertEqual(handles, [])
+        self.assertEqual(users.queries, ["FBI"])
+
+    def test_partial_display_name_is_not_a_match(self) -> None:
+        users = _Users([_user("FBI Most Wanted", "FBI")])
+        handles = verify_mentions(
+            [MentionCandidate("FBI", "organization")],
+            client=_Client(users),
+        )
+        self.assertEqual(handles, [])
+
+    def test_emoji_in_the_display_name_still_matches(self) -> None:
+        users = _Users([_user("Jett Lawrence 🏁", "jettlawrence", verified_type="blue")])
+        handles = verify_mentions(
+            [MentionCandidate("Jett Lawrence", "person")],
+            client=_Client(users),
+        )
+        self.assertEqual(handles, ["@jettlawrence"])
+
+    def test_unverified_account_is_not_tagged(self) -> None:
+        users = _Users([_user("FBI", "FBI", verified=False, verified_type="none")])
+        handles = verify_mentions(
+            [MentionCandidate("FBI", "organization")],
+            client=_Client(users),
+        )
+        self.assertEqual(handles, [])
+
+    def test_verified_type_counts_when_the_boolean_is_missing(self) -> None:
+        users = _Users([_user("Saturday Night Live", "nbcsnl", verified=None, verified_type="business")])
+        handles = verify_mentions(
+            [MentionCandidate("Saturday Night Live", "organization")],
+            client=_Client(users),
+        )
+        self.assertEqual(handles, ["@nbcsnl"])
+
+    def test_two_verified_matches_tag_nobody(self) -> None:
+        users = _Users(
+            [
+                _user("FBI", "FBI", id="1"),
+                _user("FBI", "FBIGov", id="2"),
+            ]
+        )
+        handles = verify_mentions(
+            [MentionCandidate("FBI", "organization")],
+            client=_Client(users),
+        )
+        self.assertEqual(handles, [])
+
+    def test_verified_account_wins_over_an_unverified_duplicate(self) -> None:
+        users = _Users(
+            [
+                _user("FBI", "FBI_fan", id="fan", verified=False, verified_type="none"),
+                _user("FBI", "FBI", id="official"),
+            ]
+        )
+        handles = verify_mentions(
+            [MentionCandidate("FBI", "organization")],
+            client=_Client(users),
+        )
+        self.assertEqual(handles, ["@FBI"])
+
+    def test_parody_account_is_not_tagged(self) -> None:
+        users = _Users([_user("FBI", "FBI", parody=True)])
+        handles = verify_mentions(
+            [MentionCandidate("FBI", "organization")],
+            client=_Client(users),
+        )
+        self.assertEqual(handles, [])
+
+    def test_lookup_error_tags_nobody(self) -> None:
+        users = _Users(error=RuntimeError("network down"))
+        handles = verify_mentions(
+            [MentionCandidate("FBI", "organization"), MentionCandidate("SNL", "organization")],
+            client=_Client(users),
+        )
+        self.assertEqual(handles, [])
+        self.assertEqual(users.queries, ["FBI", "SNL"])
+
+    def test_missing_client_tags_nobody(self) -> None:
+        self.assertEqual(
+            verify_mentions([MentionCandidate("FBI", "organization")], client=None),
+            [],
+        )
+
+    def test_private_victim_and_minor_are_not_looked_up(self) -> None:
+        users = _Users([_user("Jane Doe", "janedoe"), _user("FBI", "FBI")])
+        handles = verify_mentions(
+            [
+                MentionCandidate("Jane Doe", "private"),
+                MentionCandidate("the victim", "person"),
+                MentionCandidate("a 12-year-old", "person"),
+                MentionCandidate("Alex Witness", "witness"),
+                {"name": "FBI", "kind": "organization"},
+            ],
+            client=_Client(users),
+            max_mentions=2,
+        )
+        self.assertEqual(users.queries, ["FBI"])
+        self.assertEqual(handles, ["@FBI"])
+
+    def test_caps_at_two_mentions(self) -> None:
+        users = _Users(
+            [
+                _user("FBI", "FBI", id="1"),
+                _user("NASA", "NASA", id="2"),
+                _user("SNL", "SNL", id="3"),
+            ]
+        )
+        # Each lookup returns the same page, so every name has to match one row.
+        # Split by making search return only the queried name.
+        queried: list[str] = []
+
+        def search(query: str, max_results: int | None = None, user_fields: list[str] | None = None, **kwargs: object):
+            queried.append(query)
+            yield {"data": [_user(query, query, id=query)]}
+
+        users.search = search
+        handles = verify_mentions(
+            [
+                MentionCandidate("FBI", "organization"),
+                MentionCandidate("NASA", "organization"),
+                MentionCandidate("SNL", "organization"),
+            ],
+            client=_Client(users),
+            max_mentions=2,
+        )
+        self.assertEqual(handles, ["@FBI", "@NASA"])
+        self.assertEqual(queried, ["FBI", "NASA"])
+
+
+class AnnotationParsingTests(unittest.TestCase):
+    def test_parse_ignores_guessed_handles(self) -> None:
+        notes = parse_annotations(
+            '```json\n{"hashtags": ["FBI", "News"], '
+            '"mentions": [{"name": "FBI", "kind": "organization", "handle": "DefinitelyFake"}]}\n```'
+        )
+        self.assertEqual(notes.hashtags, ["FBI", "News"])
+        self.assertEqual(notes.mentions, [MentionCandidate("FBI", "organization")])
+
+    def test_bad_json_is_empty(self) -> None:
+        notes = parse_annotations("not json")
+        self.assertEqual(notes.hashtags, [])
+        self.assertEqual(notes.mentions, [])
+
+    def test_suggest_annotations_uses_the_example_prompt_and_no_live_api(self) -> None:
+        prompts = yaml.safe_load(PROMPTS_EXAMPLE.read_text(encoding="utf-8"))
+        captured: dict[str, object] = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "hashtags": ["Supercross"],
+                                        "mentions": [{"name": "Jett Lawrence", "kind": "person", "handle": "nope"}],
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+
+        class FakeHttp:
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                return None
+
+            def __enter__(self) -> "FakeHttp":
+                return self
+
+            def __exit__(self, *args: object) -> bool:
+                return False
+
+            def post(self, url: str, headers: dict | None = None, json: dict | None = None) -> FakeResponse:
+                captured["url"] = url
+                captured["json"] = json
+                return FakeResponse()
+
+        def fake_get_env(name: str, default: str | None = None) -> str | None:
+            if name == "XAI_API_KEY":
+                return "test-key"
+            if name == "XAI_MODEL":
+                return "grok-3-mini"
+            return default
+
+        with ExitStack() as stack:
+            stack.enter_context(patch("x_automation.grok.httpx.Client", FakeHttp))
+            stack.enter_context(patch("x_automation.grok.get_env", side_effect=fake_get_env))
+            notes = suggest_annotations(
+                category="motocross",
+                title="Jett Lawrence wins Anaheim",
+                summary="Lawrence went 1-1.",
+                prompts=prompts,
             )
+
+        self.assertEqual(notes.hashtags, ["Supercross"])
+        self.assertEqual(notes.mentions, [MentionCandidate("Jett Lawrence", "person")])
+        self.assertEqual(captured["url"], "https://api.x.ai/v1/chat/completions")
+        payload = captured["json"]
+        assert isinstance(payload, dict)
+        system = payload["messages"][0]["content"]
+        self.assertIn("Supercross", system)
+        self.assertIn("minors", system.lower())
+        self.assertNotIn("{{category}}", payload["messages"][1]["content"])
+        self.assertIn("Jett Lawrence wins Anaheim", payload["messages"][1]["content"])
+
+    def test_suggest_annotations_falls_back_when_the_call_fails(self) -> None:
+        prompts = yaml.safe_load(PROMPTS_EXAMPLE.read_text(encoding="utf-8"))
+
+        class FakeHttp:
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                return None
+
+            def __enter__(self) -> "FakeHttp":
+                return self
+
+            def __exit__(self, *args: object) -> bool:
+                return False
+
+            def post(self, *args: object, **kwargs: object) -> object:
+                raise RuntimeError("offline")
+
+        def fake_get_env(name: str, default: str | None = None) -> str | None:
+            if name == "XAI_API_KEY":
+                return "test-key"
+            return default
+
+        with ExitStack() as stack:
+            stack.enter_context(patch("x_automation.grok.httpx.Client", FakeHttp))
+            stack.enter_context(patch("x_automation.grok.get_env", side_effect=fake_get_env))
+            notes = suggest_annotations(
+                category="news",
+                title="FBI memo",
+                summary="A memo.",
+                prompts=prompts,
+            )
+        self.assertEqual(notes.hashtags, [])
+        self.assertEqual(notes.mentions, [])
+
+    def test_missing_annotations_key_skips_the_request(self) -> None:
+        with patch("x_automation.grok.httpx.Client", side_effect=AssertionError("no API")):
+            notes = suggest_annotations(
+                category="news",
+                title="FBI memo",
+                summary="A memo.",
+                prompts={"voices": {}, "styles": {}},
+            )
+        self.assertEqual(notes.hashtags, [])
+        self.assertEqual(notes.mentions, [])
+
+
+class IngestEngagementTests(unittest.TestCase):
+    def test_example_config_keys(self) -> None:
+        feeds = yaml.safe_load(FEEDS_EXAMPLE.read_text(encoding="utf-8"))
+        prompts = yaml.safe_load(PROMPTS_EXAMPLE.read_text(encoding="utf-8"))
+        self.assertIn("system", prompts["annotations"])
+        self.assertIn("user", prompts["annotations"])
+        for name in ("news", "comedy", "motocross"):
+            category = feeds["categories"][name]
+            self.assertTrue(category["topic_hashtags"])
+            self.assertEqual(category["keep_static_hashtags"], 1)
+            self.assertEqual(category["max_topic_hashtags"], 2)
+            self.assertEqual(category["max_hashtags"], 3)
+            self.assertTrue(category["mentions"])
+            self.assertEqual(category["max_mentions"], 2)
+        self.assertEqual(feeds["categories"]["news"]["hashtags"], ["#News", "#Headlines"])
+
+    def test_missing_keys_keep_the_static_hashtags(self) -> None:
+        settings = resolve_engagement({"hashtags": ["#News", "#Headlines"], "tag": "🔴"})
+        self.assertFalse(settings.use_selector)
+        self.assertFalse(settings.mentions)
+
+    def _ingest(self, users: _Users, annotation: dict | None, *, fail_annotation: bool = False) -> dict:
+        feeds = {
+            "defaults": {"max_drafts_per_fetch": 1, "max_drafts_per_category": 1},
+            "categories": {
+                "news": {
+                    "tag": "🔴",
+                    "hashtags": ["#News", "#Headlines"],
+                    "topic_hashtags": True,
+                    "keep_static_hashtags": 1,
+                    "max_topic_hashtags": 2,
+                    "max_hashtags": 3,
+                    "mentions": True,
+                    "max_mentions": 2,
+                    "grok_style": "headline_joke",
+                    "voice": "sarcastic_conservative",
+                    "feeds": [{"url": "https://example.com/news.xml", "include_url": False}],
+                }
+            },
+        }
+        item = FeedItem(
+            title="FBI reviews another memo",
+            link="https://example.com/story",
+            summary="The bureau issued a memo.",
+            guid="news-1",
+            feed_url="https://example.com/news.xml",
         )
 
-    def test_public_metrics_failure_is_not_retried_as_a_fallback(self) -> None:
-        self.assertIsNone(
-            next_metric_fields(
-                ["public_metrics"],
-                400,
-                "The `ids` query parameter value is not valid",
-            )
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                if fail_annotation:
+                    raise RuntimeError("offline")
+
+            def json(self) -> dict:
+                return {"choices": [{"message": {"content": json.dumps(annotation or {})}}]}
+
+        class FakeHttp:
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                return None
+
+            def __enter__(self) -> "FakeHttp":
+                return self
+
+            def __exit__(self, *args: object) -> bool:
+                return False
+
+            def post(self, *args: object, **kwargs: object) -> FakeResponse:
+                return FakeResponse()
+
+        def fake_get_env(name: str, default: str | None = None) -> str | None:
+            if name == "XAI_API_KEY":
+                return "test-key"
+            if name == "XAI_MODEL":
+                return "grok-3-mini"
+            return default
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feeds_path = root / "feeds.yaml"
+            drafts_path = root / "drafts.json"
+            seen_path = root / "seen.json"
+            feeds_path.write_text(yaml.safe_dump(feeds, sort_keys=False), encoding="utf-8")
+            with ExitStack() as stack:
+                stack.enter_context(
+                    patch("x_automation.ingest.fetch_feed_items", return_value=[item])
+                )
+                stack.enter_context(
+                    patch(
+                        "x_automation.ingest.transform_item",
+                        return_value="@FBI found another memo #Breaking",
+                    )
+                )
+                stack.enter_context(patch("x_automation.grok.httpx.Client", FakeHttp))
+                stack.enter_context(patch("x_automation.grok.get_env", side_effect=fake_get_env))
+                stack.enter_context(patch("x_automation.grok.PROMPTS_PATH", PROMPTS_EXAMPLE))
+                stack.enter_context(patch("x_automation.ingest.SEEN_RSS_PATH", seen_path))
+                stack.enter_context(patch("x_automation.drafts.DRAFTS_PATH", drafts_path))
+                result = run_ingest(use_grok=True, feeds_path=feeds_path, client=_Client(users))
+            self.assertEqual(result.errors, 0, result.error_details)
+            self.assertEqual(result.drafts_created, 1)
+            drafts = json.loads(drafts_path.read_text(encoding="utf-8"))
+            return drafts[0]
+
+    def test_draft_gets_topic_hashtag_and_verified_mention(self) -> None:
+        draft = self._ingest(
+            _Users([_user("FBI", "FBI")]),
+            {
+                "hashtags": ["FBI", "News", "Breaking"],
+                "mentions": [
+                    {"name": "FBI", "kind": "organization", "handle": "DefinitelyFake"},
+                    {"name": "a local witness", "kind": "victim"},
+                ],
+            },
         )
+        text = draft["text"]
+        self.assertTrue(text.startswith("🔴 "))
+        self.assertFalse(text.lstrip().startswith("@"))
+        self.assertIn("found another memo", text)
+        self.assertIn("#FBI", text)
+        self.assertIn("#News", text)
+        self.assertNotIn("#Headlines", text)
+        self.assertNotIn("#Breaking", text)
+        self.assertIn("@FBI", text)
+        self.assertNotIn("@DefinitelyFake", text)
+        self.assertNotIn("witness", text.lower())
+        self.assertLessEqual(len(text), 280)
+        self.assertEqual(draft["metadata"]["mentions"], ["@FBI"])
+
+    def test_lookup_failure_still_posts_without_a_mention(self) -> None:
+        draft = self._ingest(
+            _Users(error=RuntimeError("network down")),
+            {
+                "hashtags": ["FBI"],
+                "mentions": [{"name": "FBI", "kind": "organization", "handle": "FBI"}],
+            },
+        )
+        text = draft["text"]
+        self.assertIn("#FBI", text)
+        self.assertIn("#News", text)
+        self.assertNotIn("@", text)
+        self.assertTrue(text.startswith("🔴 "))
+        self.assertIn("found another memo", text)
 
 
 if __name__ == "__main__":

@@ -35,7 +35,7 @@ Posts must contain the emoji in their text to match. Progress saved to `data/che
 
 ## Drafts (RSS + Grok + Cursor)
 
-Nothing posts until you approve and publish. Max **3 posts per category per UTC day**. After `drafts analytics`, fetch scales each category's draft budget by that category's engagement.
+Manual posting waits until you approve. `drafts autopost` skips that and posts on its own. Max **3 posts per category per UTC day**. Fetch rotates across categories so the first feed does not starve the rest. After `drafts analytics`, fetch also scales each category's draft budget by engagement.
 
 ```bash
 cp feeds.yaml.example feeds.yaml
@@ -56,9 +56,29 @@ python -m x_automation.cli drafts reject <id>
 python -m x_automation.cli drafts publish            # dry-run
 python -m x_automation.cli drafts publish --execute
 
+python -m x_automation.cli drafts autopost --dry-run # fetch + approve, no post
+python -m x_automation.cli drafts autopost           # fetch, approve, post
+
 python -m x_automation.cli drafts stats
 python -m x_automation.cli drafts analytics          # score posts, write weights
 ```
+
+Unattended posts run from cron at 8:00, 13:00, and 18:00 America/New_York:
+
+```bash
+chmod +x scripts/autopost.sh
+# crontab lines:
+# CRON_TZ=America/New_York
+# 0 8,13,18 * * * /home/wadeflavor/projects/x-automation/scripts/autopost.sh
+```
+
+Output is appended to `data/autopost.log`. News headlines become dry, sarcastic lines in a right-leaning voice (`voice: sarcastic_conservative` in `feeds.yaml`); tragic stories are dropped when Grok replies `SKIP`. Comedy uses `sarcastic_comedy` (the same slant when the source is politics or culture). Motocross stays on the race with `sarcastic_sports`. Voice text lives under `voices:` in `prompts.yaml`. Links are left off so each post stays on the text-only X API rate. If an older local `prompts.yaml` has no `voices:` section, copy `prompts.yaml.example` over it.
+
+Hashtags and @mentions are optional and come from local config (these files are gitignored, so copy the keys from the examples):
+
+- `topic_hashtags`, `keep_static_hashtags` (0 or 1), `max_topic_hashtags`, and `max_hashtags` on each category in `feeds.yaml`. The draft step asks Grok for one or two story tags (`#FBI`, `#SNL`, `#Supercross`) and can keep the first static tag in `hashtags`. A post ends up with at most 2–3 tags. Without those keys, every static tag is still appended.
+- `mentions` and `max_mentions` on each category. The main public figure or organization is @mentioned only after `GET /2/users/search` finds one verified account whose display name matches. Private people, victims, and minors are not tagged. If lookup fails or the match is ambiguous, the post tags nobody. Mentions are placed after the text so the post does not open with `@`.
+- `annotations` in `prompts.yaml` (the JSON instructions for that draft step). If the key is missing, no story tags or mention subjects are requested.
 
 Cursor agents: drop JSON in `data/inbox/cursor/` → `import-inbox`. See [docs/CURSOR_AGENTS.md](docs/CURSOR_AGENTS.md).
 

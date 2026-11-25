@@ -158,6 +158,7 @@ prompts.yaml
 .env
 .envrc
 .venv
+.pydeps
 env/
 venv/
 ENV/

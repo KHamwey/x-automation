@@ -1,21 +1,47 @@
 defaults:
+  # Posts per category per UTC day. The cron runs three times a day.
   daily_publish_cap: 3
-  max_drafts_per_category: 2
+  # Rotate across categories so the first feed does not consume the whole run.
   max_drafts_per_fetch: 14
+  max_drafts_per_category: 2
 
 categories:
   news:
     tag: "🔴"
-    grok_style: news_brief
+    hashtags: ["#News", "#Headlines"]
+    # Story hashtags from the draft step (1-2), plus the first static tag above.
+    # keep_static_hashtags is 0 or 1. A post keeps at most max_hashtags (2-3).
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    # @mention the main public figure or organization only after X verifies them.
+    mentions: true
+    max_mentions: 2
+    grok_style: headline_joke
+    # Named voice from prompts.yaml (alias: tone).
+    voice: sarcastic_conservative
     feeds:
       - url: https://moxie.foxnews.com/google-publisher/latest.xml
         include_url: true
       - url: https://moxie.foxnews.com/google-publisher/politics.xml
         include_url: true
+      - url: https://feeds.bbci.co.uk/news/rss.xml
+        include_url: false
+      - url: https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml
+        include_url: false
 
   manufacturing:
     tag: "🏗"
+    hashtags: ["#Manufacturing", "#Industry"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
     grok_style: industry_take
+    voice: sarcastic_conservative
     feeds:
       - url: https://www.manufacturing.net/rss.xml
         include_url: true
@@ -24,7 +50,15 @@ categories:
 
   cycling:
     tag: "🚲"
+    hashtags: ["#Cycling", "#Bikes"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
     grok_style: cycling_note
+    voice: sarcastic_sports
     feeds:
       - url: https://theradavist.com/feed/
         include_url: true
@@ -33,7 +67,15 @@ categories:
 
   technology:
     tag: "💻"
+    hashtags: ["#Tech", "#Technology"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
     grok_style: tech_brief
+    voice: sarcastic_conservative
     feeds:
       - url: https://feeds.arstechnica.com/arstechnica/index
         include_url: true
@@ -42,7 +84,15 @@ categories:
 
   aliens:
     tag: "👽"
+    hashtags: ["#UFO", "#UAP"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
     grok_style: alien_brief
+    voice: sarcastic_conservative
     feeds:
       - url: "https://www.liberationtimes.com/home?format=rss"
         include_url: true
@@ -51,7 +101,15 @@ categories:
 
   hardware:
     tag: "🔌"
+    hashtags: ["#Hardware", "#Maker"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
     grok_style: hardware_note
+    voice: sarcastic_conservative
     feeds:
       - url: https://blog.arduino.cc/feed/
         include_url: true
@@ -60,7 +118,46 @@ categories:
 
   comedy:
     tag: "🎭"
+    hashtags: ["#Comedy", "#Jokes"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
     grok_style: absurdist
+    # Sarcastic. Conservative slant only when the source is politics or culture.
+    voice: sarcastic_comedy
     feeds:
       - url: https://www.theonion.com/rss
+        include_url: false
+      - url: https://thehardtimes.net/feed/
+        include_url: false
+      - url: https://clickhole.com/rss
+        include_url: false
+      - url: https://reductress.com/feed/
+        include_url: false
+      - url: https://babylonbee.com/feed
+        include_url: false
+
+  motocross:
+    tag: "🏁"
+    hashtags: ["#Motocross", "#MX"]
+    topic_hashtags: true
+    keep_static_hashtags: 1
+    max_topic_hashtags: 2
+    max_hashtags: 3
+    mentions: true
+    max_mentions: 2
+    grok_style: race_brief
+    # Sarcasm about the race. Do not pull this category into politics.
+    voice: sarcastic_sports
+    feeds:
+      - url: https://motocrossactionmag.com/feed/
+        include_url: false
+      - url: https://www.vitalmx.com/rss.xml
+        include_url: false
+      - url: https://pulpmx.com/feed/
+        include_url: false
+      - url: https://mxvice.com/feed/
         include_url: false
