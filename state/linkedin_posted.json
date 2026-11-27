@@ -1,4 +1,14 @@
 {
   "schema_version": 1,
-  "posts": []
+  "posts": [
+    {
+      "key": "https://federalnewsnetwork.com/tag/fedramp/feed/::https://federalnewsnetwork.com/?p=6118163",
+      "link": "https://federalnewsnetwork.com/cybersecurity/2026/11/fedramp-pushes-new-cyber-vulnerability-rules-to-keep-pace-with-ai/",
+      "industry": "fedramp",
+      "title": "FedRAMP pushes new cyber vulnerability rules to keep pace with AI",
+      "excerpt": "FedRAMP has directed cloud service providers to federal agencies to adopt new cyber vulnerability management practices by early December. \n\nThe directive targets risks amplified by AI and requires adjustments to existing processes that supp",
+      "post_urn": "urn:li:share:7531958697829396480",
+      "posted_at": "2026-11-27T05:54:32+00:00"
+    }
+  ]
 }
