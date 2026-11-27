@@ -5,6 +5,12 @@ from __future__ import annotations
 import argparse
 import sys
 
+from x_automation.analytics import (
+    print_analytics,
+    published_post_ids,
+    run_analytics,
+    top_category_summary,
+)
 from x_automation.auth import run_auth_setup
 from x_automation.config import DEFAULT_API_BASE_URL, create_client
 from x_automation.delete import print_summary, run_delete
@@ -54,7 +60,29 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip Grok; use raw RSS titles (for testing)",
     )
+    fetch_p.add_argument(
+        "--no-preferences",
+        action="store_true",
+        help="Ignore engagement weights and use the plain per-category draft budget",
+    )
     fetch_p.set_defaults(func=cmd_drafts_fetch)
+
+    auto_p = drafts_sub.add_parser(
+        "autopost",
+        help="Fetch, approve new drafts, and publish up to the daily cap",
+    )
+    auto_p.add_argument(
+        "--no-grok",
+        action="store_true",
+        help="Skip Grok; post raw RSS titles",
+    )
+    auto_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Approve new drafts but do not post to X",
+    )
+    auto_p.add_argument("--api-base-url", default=None)
+    auto_p.set_defaults(func=cmd_drafts_autopost)
 
     import_p = drafts_sub.add_parser(
         "import-inbox",
@@ -90,6 +118,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     stats_p = drafts_sub.add_parser("stats", help="Show today's publish counts vs daily cap")
     stats_p.set_defaults(func=cmd_drafts_stats)
+
+    analytics_p = drafts_sub.add_parser(
+        "analytics",
+        help="Score published posts and write category engagement weights",
+    )
+    analytics_p.add_argument("--api-base-url", default=None)
+    analytics_p.set_defaults(func=cmd_drafts_analytics)
 
     linkedin_parser = subparsers.add_parser(
         "linkedin",
@@ -167,7 +202,10 @@ def _run_delete_command(args: argparse.Namespace, emoji_filter: str | None) -> i
 
 def cmd_drafts_fetch(args: argparse.Namespace) -> int:
     try:
-        result = run_ingest(use_grok=not args.no_grok)
+        result = run_ingest(
+            use_grok=not args.no_grok,
+            use_preferences=not args.no_preferences,
+        )
         print_ingest_summary(result)
         return 0 if result.errors == 0 else 1
     except Exception as exc:
@@ -238,6 +276,30 @@ def cmd_drafts_reject(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_drafts_autopost(args: argparse.Namespace) -> int:
+    try:
+        ingest = run_ingest(use_grok=not args.no_grok)
+        print_ingest_summary(ingest)
+        for draft_id in ingest.created_ids:
+            draft = approve_draft(draft_id)
+            print(f"Auto-approved {draft['id']} [{draft.get('category')}]")
+
+        if not list_drafts("approved"):
+            print("\nNothing to publish.")
+            return 0 if ingest.errors == 0 else 1
+
+        client = create_client(base_url=args.api_base_url)
+        result = run_publish(client, execute=not args.dry_run)
+        print_publish_summary(result, execute=not args.dry_run)
+        if args.dry_run:
+            print("\nDry run. Cron calls this command without --dry-run.")
+        failed = ingest.errors + result.errors
+        return 0 if failed == 0 else 1
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+
 def cmd_drafts_publish(args: argparse.Namespace) -> int:
     try:
         client = create_client(base_url=args.api_base_url)
@@ -264,7 +326,28 @@ def cmd_drafts_stats(_args: argparse.Namespace) -> int:
     else:
         for category, count in sorted(counts.items()):
             print(f"  {category}: {count}/{cap}")
+    summary = top_category_summary()
+    if summary:
+        print(
+            f"  Top category: {summary['category']} "
+            f"(mean {summary['mean_score']:.2f}, "
+            f"weight {summary['weight']:.2f}, "
+            f"{summary['sample_size']} posts)"
+        )
     return 0
+
+
+def cmd_drafts_analytics(args: argparse.Namespace) -> int:
+    try:
+        client = None
+        if published_post_ids():
+            client = create_client(base_url=args.api_base_url)
+        result = run_analytics(client)
+        print_analytics(result)
+        return 0
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
 
 def cmd_linkedin_auth(_args: argparse.Namespace) -> int:
