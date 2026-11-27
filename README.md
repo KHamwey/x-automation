@@ -1,6 +1,6 @@
 # x-automation
 
-CLI tools for your X account: bulk delete, emoji-targeted delete, and approve-first posting from RSS/Grok/Cursor drafts.
+CLI tools for your X account: bulk delete, emoji-targeted delete, and approve-first posting from RSS/Grok/Cursor drafts. LinkedIn is separate: industry posts are generated and published on a schedule with no approval step.
 
 Requires [X Developer Console](https://console.x.com) credits + OAuth app. X Premium does not include API access.
 
@@ -81,6 +81,125 @@ Hashtags and @mentions are optional and come from local config (these files are 
 - `annotations` in `prompts.yaml` (the JSON instructions for that draft step). If the key is missing, no story tags or mention subjects are requested.
 
 Cursor agents: drop JSON in `data/inbox/cursor/` → `import-inbox`. See [docs/CURSOR_AGENTS.md](docs/CURSOR_AGENTS.md).
+
+## LinkedIn autopost
+
+LinkedIn posts go out on their own. There is no approve step. X drafts are unchanged and still require `drafts approve` before `drafts publish --execute`.
+
+The publisher uses LinkedIn's official APIs only:
+
+- OAuth 2.0 authorization-code (3-legged) flow
+- scopes `openid profile w_member_social`
+- member id from `GET https://api.linkedin.com/v2/userinfo` (`sub`)
+- `POST https://api.linkedin.com/rest/posts` with author `urn:li:person:<id>`
+- headers `LinkedIn-Version` (current `YYYYMM`, `202611` as of November 2026) and `X-Restli-Protocol-Version: 2.0.0`
+
+Personal access tokens last about 60 days. LinkedIn returns a refresh token only if the app is approved for programmatic refresh. This project uses a refresh token when one is present. Otherwise it stops on expiry or HTTP 401 and the GitHub Actions job fails with `LINKEDIN AUTH FAILURE`.
+
+### Industries
+
+Edit `linkedin_feeds.yaml` (tracked; Actions uses it) and `linkedin_prompts.yaml`. The `.example` files are the same starter. Shipped topics:
+
+| Id | Weight | What it posts |
+|----|--------|----------------|
+| `fedramp` | 3 | FedRAMP authorizations, GovCloud, federal cloud, and the defense / AWS connection when the source supports it |
+| `aerospace_defense` | 1 | Aerospace, space, and defense |
+| `tech` | 1 | Software and infrastructure |
+| `aws_cloud` | 1 | AWS integration and cloud infrastructure, including FedRAMP when the source says so |
+
+Weight 3 on FedRAMP produces this cycle, then it repeats:
+
+`fedramp`, `aerospace_defense`, `fedramp`, `tech`, `fedramp`, `aws_cloud`
+
+About half of posts are FedRAMP. The other three rotate through the remaining slots. Set `enabled: false` or change `weight` to shift that. Prompts are told never to invent an authorization status, impact level, or customer.
+
+Each run publishes at most one post, skips items already in `state/linkedin_posted.json`, and stops at 2 posts per America/New_York day or when the previous post was under 3 hours ago.
+
+### One-time LinkedIn app setup
+
+1. Open [LinkedIn Developer Apps](https://www.linkedin.com/developers/apps) and create an app.
+2. On the Products tab, add both:
+   - **Share on LinkedIn** (scope `w_member_social`)
+   - **Sign In with LinkedIn using OpenID Connect** (scopes `openid` and `profile`)
+3. On the Auth tab, add this redirect URL exactly:
+
+   `http://127.0.0.1:8765/callback`
+
+4. Copy the client id and client secret into `.env`:
+
+```bash
+cp .env.example .env
+# LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET, LINKEDIN_REDIRECT_URI
+# XAI_API_KEY is also required (Grok writes the post)
+```
+
+5. Authorize your member account (this is local and interactive; Actions cannot do it):
+
+```bash
+python -m x_automation.cli linkedin auth
+```
+
+The browser consent screen must include `openid`, `profile`, and `w_member_social`. The command writes `data/linkedin_token.json` (gitignored) and prints the expiry and whether a refresh token was granted. It does not print the token.
+
+6. Try a post without publishing (this still calls xAI):
+
+```bash
+python -m x_automation.cli linkedin autopost --dry-run
+python -m x_automation.cli linkedin autopost --dry-run --industry fedramp
+```
+
+7. Publish once from your machine if you want to confirm the API before the schedule takes over:
+
+```bash
+python -m x_automation.cli linkedin autopost
+```
+
+### GitHub secrets
+
+Repository secrets (Settings → Secrets and variables → Actions). Never commit the token file.
+
+| Secret | Required | Value |
+|--------|----------|--------|
+| `LINKEDIN_TOKEN_JSON` | Yes, to publish | Entire contents of `data/linkedin_token.json` |
+| `XAI_API_KEY` | Yes | xAI API key used to write posts |
+| `LINKEDIN_CLIENT_ID` | Only if a refresh token was granted | LinkedIn app client id |
+| `LINKEDIN_CLIENT_SECRET` | Only if a refresh token was granted | LinkedIn app client secret |
+
+```bash
+gh secret set LINKEDIN_TOKEN_JSON < data/linkedin_token.json
+gh secret set XAI_API_KEY
+gh secret set LINKEDIN_CLIENT_ID
+gh secret set LINKEDIN_CLIENT_SECRET
+```
+
+`XAI_MODEL` is not a secret. The workflow uses `grok-3-mini`.
+
+### Schedule
+
+`.github/workflows/linkedin-autopost.yml` runs on weekdays:
+
+| Cron (UTC) | Winter (EST) | Summer (EDT) |
+|------------|--------------|--------------|
+| `15 13 * * 1-5` | 8:15 AM | 9:15 AM |
+| `30 17 * * 1-5` | 12:30 PM | 1:30 PM |
+
+GitHub cron does not follow daylight saving time. Both windows are still morning and midday Eastern, which is when LinkedIn engagement is strongest. GitHub may start a scheduled job late. The 3-hour gap skips a second post if the two runs land on top of each other.
+
+You can run it immediately with **Actions → LinkedIn autopost → Run workflow**. Check "Generate a post without publishing" for a dry run.
+
+After a successful publish, the workflow commits `state/linkedin_posted.json` so the next run does not repeat the story. That commit needs permission to push to the default branch. If branch protection blocks the GitHub Actions bot, the post can still go out and the job then fails; fix the ruleset (or allow that bot to update `state/linkedin_posted.json`) so the next run does not post the same item again.
+
+### When the token expires
+
+The Actions log shows a `LINKEDIN AUTH FAILURE` block and the job is marked failed. The failure step also raises a GitHub error annotation.
+
+1. On your machine: `python -m x_automation.cli linkedin auth`
+2. Update the secret: `gh secret set LINKEDIN_TOKEN_JSON < data/linkedin_token.json`
+3. Re-run the **LinkedIn autopost** workflow.
+
+If the saved token includes `refresh_token` and the client id and secret secrets are set, the workflow refreshes an access token that is expired or inside its last day. The refreshed access token is used for that run. The secret can keep the previous JSON until refresh itself is rejected (refresh tokens are typically a year, and LinkedIn can revoke them). When refresh fails, do the same re-auth steps.
+
+Image posts are optional. Set `attach_images: true` in `linkedin_feeds.yaml` to upload a feed image through the Images API (`initializeUpload`, then the post `content.media.id`). A failed upload still publishes the text.
 
 ## Costs (approx)
 

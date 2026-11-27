@@ -1,0 +1,144 @@
+# LinkedIn industries for unattended autopost.
+# GitHub Actions reads this file. Edit it and commit to change topics.
+# linkedin_feeds.yaml.example is the same starter if you need to reset.
+#
+# Rotation weight: FedRAMP is 3, every other enabled industry is 1.
+# The resulting cycle is:
+#   fedramp, aerospace_defense, fedramp, tech, fedramp, aws_cloud
+# About half of posts are FedRAMP. The rest rotate through aerospace,
+# tech, and AWS so the feed stays varied.
+#
+# daily_cap counts posts on an America/New_York day. The workflow runs
+# twice each weekday, and each run publishes at most one post.
+
+defaults:
+  daily_cap: 2
+  min_spacing_hours: 3
+  max_posts_per_run: 1
+  max_items_per_feed: 8
+  char_budget: 1600
+  day_timezone: America/New_York
+  # Current LinkedIn Marketing API version (November 2026). Override with
+  # LINKEDIN_API_VERSION if you move to a newer YYYYMM header.
+  api_version: "202611"
+  # Set true to attach a feed image via the Images API. Failures fall back
+  # to a text post. Leave false until you have tried a --dry-run.
+  attach_images: false
+
+industries:
+  fedramp:
+    enabled: true
+    weight: 3
+    name: FedRAMP, GovCloud, and federal cloud
+    grok_style: fedramp_brief
+    hashtags:
+      - "#FedRAMP"
+      - "#GovCloud"
+      - "#FederalIT"
+      - "#CloudSecurity"
+      - "#Compliance"
+      - "#DefenseIT"
+    angle: >
+      Heavy emphasis on FedRAMP: authorizations, consolidated rules,
+      authorization boundaries, impact levels, continuous monitoring, and
+      agency reuse. When the source supports it, connect the story to
+      GovCloud and AWS or other cloud infrastructure, and to defense or
+      federal IT. Do not force a FedRAMP claim onto an unrelated story,
+      and never invent an authorization status.
+    feeds:
+      - url: https://federalnewsnetwork.com/tag/fedramp/feed/
+        include_url: true
+      - url: https://fedscoop.com/tag/fedramp/feed/
+        include_url: true
+      - url: https://federalnewsnetwork.com/tag/govcloud/feed/
+        include_url: true
+      - url: https://www.fedscoop.com/tag/cloud/feed/
+        include_url: true
+      - url: https://federalnewsnetwork.com/tag/cloud/feed/
+        include_url: true
+      - url: https://aws.amazon.com/blogs/publicsector/feed/
+        include_url: true
+
+  aerospace_defense:
+    enabled: true
+    weight: 1
+    name: Aerospace, space, and defense
+    grok_style: aerospace_brief
+    hashtags:
+      - "#Aerospace"
+      - "#Space"
+      - "#Defense"
+      - "#NationalSecurity"
+      - "#Engineering"
+    angle: >
+      Focus on aerospace, space, and defense programs, acquisition, and
+      mission systems. If the source involves federal IT, cloud, or
+      cybersecurity, connect it to FedRAMP or defense cloud only when the
+      article supports that connection.
+    feeds:
+      - url: https://www.space.com/feeds/all
+        include_url: true
+      - url: https://www.nasa.gov/feed/
+        include_url: true
+      - url: https://www.defenseone.com/rss/all/
+        include_url: true
+      - url: https://breakingdefense.com/feed/
+        include_url: true
+      - url: https://www.defensenews.com/arc/outboundfeeds/rss/?outputType=xml
+        include_url: true
+      - url: https://www.c4isrnet.com/arc/outboundfeeds/rss/?outputType=xml
+        include_url: true
+
+  tech:
+    enabled: true
+    weight: 1
+    name: Technology
+    grok_style: tech_brief
+    hashtags:
+      - "#Technology"
+      - "#Software"
+      - "#Engineering"
+      - "#Infrastructure"
+    angle: >
+      Focus on technology practitioners can use: software, platforms,
+      infrastructure, and engineering tradeoffs. Stay specific to the source.
+    feeds:
+      - url: https://feeds.arstechnica.com/arstechnica/index
+        include_url: true
+      - url: https://techcrunch.com/feed/
+        include_url: true
+      - url: https://www.theverge.com/rss/index.xml
+        include_url: true
+      - url: https://www.theregister.com/headlines.atom
+        include_url: true
+
+  aws_cloud:
+    enabled: true
+    weight: 1
+    name: AWS integration and cloud infrastructure
+    grok_style: aws_cloud_brief
+    hashtags:
+      - "#AWS"
+      - "#Cloud"
+      - "#CloudInfrastructure"
+      - "#DevOps"
+      - "#FedRAMP"
+    angle: >
+      Focus on AWS integration and cloud infrastructure: architecture,
+      operations, networking, security, and how teams adopt the service.
+      If the source involves government, GovCloud, or defense, connect it
+      to FedRAMP and federal compliance. Do not claim an authorization the
+      source does not state.
+    feeds:
+      - url: https://aws.amazon.com/blogs/aws/feed/
+        include_url: true
+      - url: https://aws.amazon.com/blogs/architecture/feed/
+        include_url: true
+      - url: https://aws.amazon.com/blogs/compute/feed/
+        include_url: true
+      - url: https://aws.amazon.com/blogs/devops/feed/
+        include_url: true
+      - url: https://aws.amazon.com/blogs/security/feed/
+        include_url: true
+      - url: https://thenewstack.io/feed/
+        include_url: true

@@ -1,4 +1,4 @@
-"""Tools for programmatic X account management.
+"""Tools for programmatic X account management and unattended LinkedIn posting.
 
 This package provides a CLI for bulk post deletion with safety defaults:
 dry-run by default, typed confirmation before writes, checkpoint resume,
